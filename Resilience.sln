@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36221.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ResilienceWithAop", "ResilienceWithAop\ResilienceWithAop.csproj", "{21358799-4D24-41BF-9A1F-133FB1590718}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ResilienceWithAkka", "ResilienceWithAkka\ResilienceWithAkka.csproj", "{8E6926C9-1F83-B48E-6FB5-08CCC4E9C642}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{21358799-4D24-41BF-9A1F-133FB1590718}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{21358799-4D24-41BF-9A1F-133FB1590718}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{21358799-4D24-41BF-9A1F-133FB1590718}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{21358799-4D24-41BF-9A1F-133FB1590718}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8E6926C9-1F83-B48E-6FB5-08CCC4E9C642}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8E6926C9-1F83-B48E-6FB5-08CCC4E9C642}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8E6926C9-1F83-B48E-6FB5-08CCC4E9C642}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8E6926C9-1F83-B48E-6FB5-08CCC4E9C642}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {4FF29D3D-DCA0-467F-B49F-AD9D9050AC80}
+	EndGlobalSection
+EndGlobal
