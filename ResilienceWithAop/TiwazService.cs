@@ -1,28 +1,25 @@
 ﻿namespace ResilienceWithAop;
 
+using Oasis.Resilience.Attributes;
+
 public class TiwazService : ITiwazService
 {
-    private readonly HttpClient _client = new()
-    {
-        BaseAddress = new Uri("https://tiwaz.hayatnet.local")
-    };
+    private static readonly HttpClient Client = new()
+        {
+            BaseAddress = new Uri( "https://tiwaz.hayatnet.local")
+        };
 
+    [Resilient(maxAttempts: 5, initialDelaySeconds: 2)]
     public async Task<string> GetBondsAsync()
     {
-        Console.WriteLine("Calling API...");
+        var req =  new HttpRequestMessage(HttpMethod.Get, "/v1/bonds");
+        req.Headers.Add("accept", "*/*");
+        req.Headers.Add("X-API-KEY", "Skyw@lker!");
 
-        var request = new HttpRequestMessage(HttpMethod.Get, "/v1/bonds");
-        request.Headers.Add("accept", "*/*");
-        request.Headers.Add("X-API-KEY", "Skyw@lker!");
+        var response = await Client.SendAsync(req);
+        response.EnsureSuccessStatusCode();
 
-        var response = await _client.SendAsync(request);
-
-        if (!response.IsSuccessStatusCode)
-            throw new Exception($"HTTP {response.StatusCode}");
-
-        var body = await response.Content.ReadAsStringAsync();
-        Console.WriteLine("Success");
-
-        return body;
+        return
+            await response.Content.ReadAsStringAsync();
     }
 }

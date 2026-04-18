@@ -1,30 +1,32 @@
-﻿using Akka.Actor;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Oasis.Resilience;
 using ResilienceWithAop;
-using System.Reflection;
 
+var services = new ServiceCollection();
+services.AddResilience().AddResilientService<ITiwazService, TiwazService>();
+using var serviceProvider = services.BuildServiceProvider();
 
-// ===== Actor system =====
-using var system = ActorSystem.Create("tiwaz-system");
+var service = serviceProvider.GetRequiredService<ITiwazService>();
 
-// ===== Create proxy for your service =====
-ITiwazService service = DispatchProxy.Create<ITiwazService, ResilientProxy<ITiwazService>>();
-((ResilientProxy<ITiwazService>)service).DecoratedInstance = new TiwazService();
-((ResilientProxy<ITiwazService>)service).ProxyActorSystem = system;
+Console.ForegroundColor = ConsoleColor.Cyan;
+Console.WriteLine( "Calling service using AOP resilience...");
+Console.WriteLine("If the endpoint is unavailable, retries will be shown below.");
+Console.ResetColor();
 
-// ===== Call the decorated method =====
 try
 {
     var result = await service.GetBondsAsync();
+    Console.ForegroundColor = ConsoleColor.Green;
     Console.WriteLine("Method call succeeded. Response:");
+    Console.ResetColor();
     Console.WriteLine(result);
 }
 catch (Exception ex)
 {
+    Console.ForegroundColor = ConsoleColor.Red;
     Console.WriteLine($"Method call failed after retries: {ex.Message}");
+    Console.ResetColor();
 }
 
 Console.WriteLine("Press ENTER to terminate...");
 Console.ReadLine();
-
-await system.Terminate();
