@@ -18,7 +18,7 @@ public class CalendarService : ICalendarService
     /// Asynchronously retrieves Danish public holidays for the year 2001 from the calendar backend.
     /// </summary>
     /// <returns>A task that represents the asynchronous operation. The task result contains the response content as a string.</returns>
-    [Resilient(maxAttempts: 10, initialDelaySeconds: 2)]
+    [Resilient(maxAttempts: 2, initialDelaySeconds: 2)]
     public async Task<string> GetDanishHolidaysAsync()
     {
         Console.WriteLine("Calling calendar backend...");
@@ -29,6 +29,24 @@ public class CalendarService : ICalendarService
         var response = await Client.SendAsync(request);
         response.EnsureSuccessStatusCode();
         
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    /// <summary>
+    /// Asynchronously retrieves Danish public holidays for the year 2001 from the calendar backend.
+    /// </summary>
+    /// <returns>A task that represents the asynchronous operation. The task result contains the response content as a string.</returns>
+    [Resilient(maxAttempts: 8, initialDelaySeconds: 2)]
+    public async Task<string> GetNorwegianHolidaysAsync()
+    {
+        Console.WriteLine("Calling calendar backend...");
+        var request = new HttpRequestMessage(HttpMethod.Get, "/v1/calendar/holidays/NO/2023");
+        request.Headers.Add("accept", "*/*");
+        request.Headers.Add("X-API-KEY", "Skyw@lker!");
+
+        var response = await Client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
         return await response.Content.ReadAsStringAsync();
     }
 }

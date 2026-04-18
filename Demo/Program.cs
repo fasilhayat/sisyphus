@@ -15,18 +15,42 @@ Console.ResetColor();
 
 try
 {
-    var result = await calendar.GetDanishHolidaysAsync();
+    var danishTask = calendar.GetDanishHolidaysAsync();
+    var norwegianTask = calendar.GetNorwegianHolidaysAsync();
 
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine("Call succeeded. Response:");
-    Console.ResetColor();
-    Console.WriteLine(result);
+    try
+    {
+        await Task.WhenAll(danishTask, norwegianTask);
+    }
+    catch
+    {
+        // Do not fail entire demo here.
+        // Inspect tasks individually below.
+    }
+
+    if (danishTask.IsFaulted)
+    {
+        Console.WriteLine($"Danish failed: " + danishTask.Exception?.GetBaseException().Message);
+    }
+    else if (danishTask.IsCompletedSuccessfully)
+    {
+        Console.WriteLine("Danish succeeded:");
+        Console.WriteLine(danishTask.Result);
+    }
+
+    if (norwegianTask.IsFaulted)
+    {
+        Console.WriteLine($"Norwegian failed: " + norwegianTask.Exception?.GetBaseException().Message);
+    }
+    else if (norwegianTask.IsCompletedSuccessfully)
+    {
+        Console.WriteLine("Norwegian succeeded:");
+        Console.WriteLine(norwegianTask.Result);
+    }
 }
 catch (Exception ex)
 {
-    Console.ForegroundColor = ConsoleColor.Red;
     Console.WriteLine($"Call failed after retries: {ex.Message}");
-    Console.ResetColor();
 }
 
 Console.WriteLine("Press ENTER to terminate...");
