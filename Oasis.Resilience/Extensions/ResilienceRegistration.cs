@@ -1,6 +1,7 @@
 ﻿namespace Oasis.Resilience;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Oasis.Resilience.Proxies;
 using System.Reflection;
 
@@ -15,9 +16,15 @@ public static class ResilienceRegistration
     /// Adds resilience-related services to the specified service collection.
     /// </summary>
     /// <param name="services">The service collection to add services to.</param>
+    /// <param name="configureOptions">An optional action to configure resilience options.</param>
     /// <returns>The updated service collection.</returns>
-    public static IServiceCollection AddResilience(this IServiceCollection services)
+    public static IServiceCollection AddResilience(this IServiceCollection services, Action<ResilienceOptions>? configureOptions = null)
     {
+        services.Configure<ResilienceOptions>(options =>
+        {
+            configureOptions?.Invoke(options);
+        });
+        
         services.AddSingleton<ResilienceRuntime>();
         return services;
     }

@@ -3,9 +3,10 @@ using Oasis.Resilience;
 using ResilienceWithAop;
 
 var services = new ServiceCollection();
-services.AddResilience().AddResilientService<ITiwazService, TiwazService>();
-using var serviceProvider = services.BuildServiceProvider();
+services.AddResilience(options => options.VerboseLogging = true)
+    .AddResilientService<ITiwazService, TiwazService>();
 
+using var serviceProvider = services.BuildServiceProvider();
 var service = serviceProvider.GetRequiredService<ITiwazService>();
 
 Console.ForegroundColor = ConsoleColor.Cyan;
@@ -30,3 +31,8 @@ catch (Exception ex)
 
 Console.WriteLine("Press ENTER to terminate...");
 Console.ReadLine();
+
+services.Configure<ResilienceOptions>("ResilienceOptions", options =>
+{
+    options.VerboseLogging = true;
+});

@@ -5,10 +5,18 @@ using Akka.Actor;
 /// <summary>
 /// An Akka.NET actor that executes operations with configurable retry logic and exponential backoff for resilience.
 /// </summary>
-/// <remarks>Handles execution requests by retrying failed operations up to a specified number of attempts,
-/// applying an exponential delay between retries. Reports success or failure to the sender.</remarks>
+/// <remarks>
+/// Handles execution requests by retrying failed operations up to a specified number of attempts,
+/// applying an exponential delay between retries. Reports success or failure to the sender.
+/// </remarks>
 public sealed class ResilienceActor : ReceiveActor
 {
+    /// <summary>
+    /// Provides resilience configuration settings used by the actor, including whether
+    /// verbose retry diagnostics should be written during execution.
+    /// </summary>
+    private readonly ResilienceOptions _options;
+
     /// <summary>
     /// Represents an executable operation with retry logic and configurable delay between attempts.
     /// </summary>
@@ -20,8 +28,10 @@ public sealed class ResilienceActor : ReceiveActor
     /// <summary>
     /// Initializes a new instance of the ResilienceActor class and sets up message handling with retry logic.
     /// </summary>
-    public ResilienceActor()
+    /// <param name="options">The resilience configuration options.</param>
+    public ResilienceActor(ResilienceOptions options)
     {
+        _options = options;
         ReceiveAsync<Execute>(ExecuteWithRetry);
     }
 
@@ -29,7 +39,9 @@ public sealed class ResilienceActor : ReceiveActor
     /// Executes the specified operation with retry logic, sending the result or failure to the sender.
     /// </summary>
     /// <param name="msg">The execution parameters, including the operation to perform, maximum attempts, and initial delay.</param>
-    /// <returns>A task that represents the asynchronous execution with retry logic.</returns>
+    /// <returns>
+    /// A task that represents the asynchronous execution with retry logic.
+    /// </returns>
     private async Task ExecuteWithRetry(Execute msg)
     {
         Exception? lastException = null;
@@ -38,15 +50,9 @@ public sealed class ResilienceActor : ReceiveActor
         {
             try
             {
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"[Resilience] Attempt {attempt} executing...");
-                Console.ResetColor();
-
+                Log($"Attempt {attempt} executing...");
                 var result = await msg.Operation();
-
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"[Resilience] Success on attempt {attempt}");
-                Console.ResetColor();
+                Log($"Success on attempt {attempt}");
 
                 Sender.Tell(result);
                 return;
@@ -54,28 +60,34 @@ public sealed class ResilienceActor : ReceiveActor
             catch (Exception ex)
             {
                 lastException = ex;
-
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine($"[Resilience] Attempt {attempt} failed: {ex.Message}");
-                Console.ResetColor();
+                Log($"Attempt {attempt} failed: {ex.Message}");
 
                 if (attempt == msg.MaxAttempts)
                     break;
 
                 var delay = TimeSpan.FromMilliseconds(msg.InitialDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
 
-                Console.ForegroundColor = ConsoleColor.DarkYellow;
-                Console.WriteLine($"[Resilience] Retrying in {delay.TotalSeconds}s...");
-                Console.ResetColor();
-
+                Log($"Retrying in {delay.TotalSeconds}s...");
                 await Task.Delay(delay);
             }
         }
 
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine("[Resilience] Max retry attempts reached. Failing.");
-        Console.ResetColor();
-
+        Log("Max retry attempts reached. Failing.");
         Sender.Tell(new Status.Failure(lastException!));
+    }
+
+    /// <summary>
+    /// Logs a message to the console when verbose logging is enabled.
+    /// </summary>
+    /// <param name="message">
+    /// The message to write to the console.
+    /// </param>
+    private void Log(string message)
+    {
+        if (!_options.VerboseLogging)
+            return;
+
+        Console.WriteLine(
+            $"[Resilience] {message}");
     }
 }

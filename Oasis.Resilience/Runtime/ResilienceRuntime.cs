@@ -1,6 +1,7 @@
 ﻿namespace Oasis.Resilience;
 
 using Akka.Actor;
+using Microsoft.Extensions.Options;
 using Oasis.Resilience.Actors;
 
 /// <summary>
@@ -10,6 +11,8 @@ using Oasis.Resilience.Actors;
 /// message handling.</remarks>
 internal sealed class ResilienceRuntime
 {
+    private readonly ResilienceOptions _options;
+
     /// <summary>
     /// Gets the actor system used for managing actors and message processing.
     /// </summary>
@@ -23,9 +26,10 @@ internal sealed class ResilienceRuntime
     /// <summary>
     /// Initializes a new instance of the ResilienceRuntime class and creates the resilience actor.
     /// </summary>
-    public ResilienceRuntime()
+    public ResilienceRuntime(IOptions<ResilienceOptions> options)
     {
-        Actor = System.ActorOf(Props.Create<ResilienceActor>(), "resilience");
+        _options = options.Value;
+        Actor = System.ActorOf(Props.Create(() => new ResilienceActor(_options)), "resilience");
     }
 
     /// <summary>
