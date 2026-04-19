@@ -19,7 +19,6 @@ public class TiwazService : ITiwazService
         var response = await Client.SendAsync(req);
         response.EnsureSuccessStatusCode();
 
-        return
-            await response.Content.ReadAsStringAsync();
+        return await response.Content.ReadAsStringAsync();
     }
 }
