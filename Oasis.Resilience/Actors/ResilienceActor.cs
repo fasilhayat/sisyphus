@@ -79,9 +79,7 @@ public sealed class ResilienceActor : ReceiveActor
     /// <summary>
     /// Logs a message to the console when verbose logging is enabled.
     /// </summary>
-    /// <param name="message">
-    /// The message to write to the console.
-    /// </param>
+    /// <param name="message">The message to write to the console.</param>
     private void Log(string message)
     {
         if (!_options.VerboseLogging) 
