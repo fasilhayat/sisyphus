@@ -1,4 +1,4 @@
-﻿using Demo;
+﻿using Demo.Calendar;
 using Oasis.Resilience.Attributes;
 
 /// <summary>
@@ -21,7 +21,7 @@ public class CalendarService : ICalendarService
     [Resilient(maxAttempts: 2, initialDelaySeconds: 2)]
     public async Task<string> GetDanishHolidaysAsync()
     {
-        Console.WriteLine("Calling calendar backend...");
+        Console.WriteLine("Calling DanishHolidays backend...");
         var request = new HttpRequestMessage(HttpMethod.Get, "/v1/calendar/holidays/DK/2001");
         request.Headers.Add("accept","*/*");
         request.Headers.Add("X-API-KEY", "Skyw@lker!");
@@ -39,7 +39,7 @@ public class CalendarService : ICalendarService
     [Resilient(maxAttempts: 8, initialDelaySeconds: 2)]
     public async Task<string> GetNorwegianHolidaysAsync()
     {
-        Console.WriteLine("Calling calendar backend...");
+        Console.WriteLine("Calling Norwegian backend...");
         var request = new HttpRequestMessage(HttpMethod.Get, "/v1/calendar/holidays/NO/2023");
         request.Headers.Add("accept", "*/*");
         request.Headers.Add("X-API-KEY", "Skyw@lker!");

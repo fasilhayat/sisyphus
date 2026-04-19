@@ -1,7 +1,6 @@
 ﻿namespace Oasis.Resilience;
 
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Oasis.Resilience.Proxies;
 using System.Reflection;
 

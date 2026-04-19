@@ -1,52 +1,43 @@
-﻿using Demo;
+﻿using Demo.Bonds;
+using Demo.Calendar;
 using Microsoft.Extensions.DependencyInjection;
 using Oasis.Resilience;
 
 var services = new ServiceCollection();
 
-services.AddResilience().AddResilientService<ICalendarService, CalendarService>();
-using var serviceProvider = services.BuildServiceProvider();
-var calendar = serviceProvider.GetRequiredService<ICalendarService>();
+services.AddResilience(options => options.VerboseLogging = true).AddResilientService<ICalendarService, CalendarService>();
+services.AddResilience().AddResilientService<ITiwazService, TiwazService>();
 
-Console.ForegroundColor = ConsoleColor.Cyan;
-Console.WriteLine("Calling Calendar API using AOP resilience...");
-Console.WriteLine("Stop/start backend while retries are running to test recovery.");
-Console.ResetColor();
+using var serviceProvider = services.BuildServiceProvider();
+
+var calendar = serviceProvider.GetRequiredService<ICalendarService>();
+var tiwaz = serviceProvider.GetRequiredService<ITiwazService>();
 
 try
 {
+    Console.ForegroundColor = ConsoleColor.Cyan;
+    Console.WriteLine("Calling service using AOP resilience...");
+    Console.WriteLine("If the endpoint is unavailable, retries will be shown below.");
+    Console.ResetColor();
+
     var danishTask = calendar.GetDanishHolidaysAsync();
     var norwegianTask = calendar.GetNorwegianHolidaysAsync();
+    var bondTask = tiwaz.GetBondsAsync();
 
     try
     {
-        await Task.WhenAll(danishTask, norwegianTask);
+        await Task.WhenAll(danishTask, norwegianTask, bondTask);
     }
-    catch
+    catch(Exception ex)
     {
-        // Do not fail entire demo here.
-        // Inspect tasks individually below.
+        Console.ForegroundColor = ConsoleColor.DarkYellow;
+        Console.WriteLine($"Task.WhenAll observed one or more failures and threw error: '{ex.Message}'.\nContinuing so each task can be inspected separately.");
+        Console.ResetColor();
     }
 
-    if (danishTask.IsFaulted)
-    {
-        Console.WriteLine($"Danish failed: " + danishTask.Exception?.GetBaseException().Message);
-    }
-    else if (danishTask.IsCompletedSuccessfully)
-    {
-        Console.WriteLine("Danish succeeded:");
-        Console.WriteLine(danishTask.Result);
-    }
-
-    if (norwegianTask.IsFaulted)
-    {
-        Console.WriteLine($"Norwegian failed: " + norwegianTask.Exception?.GetBaseException().Message);
-    }
-    else if (norwegianTask.IsCompletedSuccessfully)
-    {
-        Console.WriteLine("Norwegian succeeded:");
-        Console.WriteLine(norwegianTask.Result);
-    }
+    PrintTaskResult("Danish", danishTask);
+    PrintTaskResult("Norwegian", norwegianTask);
+    PrintTaskResult("Bonds", bondTask);
 }
 catch (Exception ex)
 {
@@ -55,3 +46,27 @@ catch (Exception ex)
 
 Console.WriteLine("Press ENTER to terminate...");
 Console.ReadLine();
+
+static void PrintTaskResult(string name, Task<string> task)
+{
+    if (task.IsCompletedSuccessfully)
+    {
+        Console.WriteLine($"{name} succeeded:");
+        Console.WriteLine(task.Result);
+        return;
+    }
+
+    if (task.IsFaulted)
+    {
+        Console.WriteLine($"{name} failed: {task.Exception?.GetBaseException().Message}");
+        return;
+    }
+
+    if (task.IsCanceled)
+    {
+        Console.WriteLine($"{name} was cancelled.");
+        return;
+    }
+
+    Console.WriteLine($"{name} ended in unexpected state.");
+}

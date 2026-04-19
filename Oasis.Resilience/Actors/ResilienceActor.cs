@@ -84,10 +84,8 @@ public sealed class ResilienceActor : ReceiveActor
     /// </param>
     private void Log(string message)
     {
-        if (!_options.VerboseLogging)
+        if (!_options.VerboseLogging) 
             return;
-
-        Console.WriteLine(
-            $"[Resilience] {message}");
+        Console.WriteLine($"[Resilience] {message}");
     }
 }

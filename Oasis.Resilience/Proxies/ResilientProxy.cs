@@ -69,9 +69,7 @@ public class ResilientProxy<T> : DispatchProxy
     {
         var returnType = implementedMethod.ReturnType;
 
-        if (!returnType.IsGenericType)
-            throw new InvalidOperationException(
-                "Only Task<T> supported.");
+        if (!returnType.IsGenericType) throw new InvalidOperationException("Only Task<T> supported.");
 
         var resultType = returnType.GetGenericArguments()[0];
         var method = typeof(ResilientProxy<T>).GetMethod(nameof(InvokeGeneric), BindingFlags.NonPublic | BindingFlags.Instance)!
@@ -98,8 +96,7 @@ public class ResilientProxy<T> : DispatchProxy
                         return await task;
                     },
                     attr.MaxAttempts,
-                    TimeSpan.FromSeconds(
-                        attr.InitialDelaySeconds)));
+                    TimeSpan.FromSeconds(attr.InitialDelaySeconds)));
 
         if (result is Status.Failure f)  throw f.Cause;
 

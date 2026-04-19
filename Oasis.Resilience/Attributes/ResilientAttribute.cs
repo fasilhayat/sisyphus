@@ -20,19 +20,18 @@ public sealed class ResilientAttribute : Attribute
     public int InitialDelaySeconds { get; }
 
     /// <summary>
-    /// Initializes a new instance of the ResilientAttribute class with the specified maximum number of attempts and
-    /// initial delay in seconds.
+    /// Initializes a new instance of the ResilientAttribute class.
+    /// Default values are 5 retry attempts and an initial delay of 2 seconds.
     /// </summary>
-    /// <param name="maxAttempts">The maximum number of retry attempts. Must be greater than 0.</param>
-    /// <param name="initialDelaySeconds">The initial delay between attempts, in seconds. Must be non-negative.</param>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when maxAttempts is less than 1 or initialDelaySeconds is negative.</exception>
+    /// <param name="maxAttempts">The maximum number of retry attempts. Default is 5.</param>
+    /// <param name="initialDelaySeconds">The initial delay between attempts, in seconds. Default is 2.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when maxAttempts is less than 1 or initialDelaySeconds is negative.
+    /// </exception>
     public ResilientAttribute(int maxAttempts = 5, int initialDelaySeconds = 2)
     {
-        if (maxAttempts < 1)
-            throw new ArgumentOutOfRangeException(nameof(maxAttempts));
-
-        if (initialDelaySeconds < 0)
-            throw new ArgumentOutOfRangeException(nameof(initialDelaySeconds));
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxAttempts, 1);
+        ArgumentOutOfRangeException.ThrowIfNegative(initialDelaySeconds);
 
         MaxAttempts = maxAttempts;
         InitialDelaySeconds = initialDelaySeconds;
