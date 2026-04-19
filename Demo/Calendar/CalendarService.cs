@@ -17,36 +17,43 @@ public class CalendarService : ICalendarService
     /// <summary>
     /// Asynchronously retrieves Danish public holidays for the year 2001 from the calendar backend.
     /// </summary>
-    /// <returns>A task that represents the asynchronous operation. The task result contains the response content as a string.</returns>
     [Resilient(maxAttempts: 2, initialDelaySeconds: 2)]
     public async Task<string> GetDanishHolidaysAsync()
     {
         Console.WriteLine("Calling DanishHolidays backend...");
-        var request = new HttpRequestMessage(HttpMethod.Get, "/v1/calendar/holidays/DK/2001");
-        request.Headers.Add("accept","*/*");
-        request.Headers.Add("X-API-KEY", "Skyw@lker!");
-
-        var response = await Client.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-        
-        return await response.Content.ReadAsStringAsync();
+        return await GetHolidaysAsync("/v1/calendar/holidays/DK/2001");
     }
 
     /// <summary>
-    /// Asynchronously retrieves Danish public holidays for the year 2001 from the calendar backend.
+    /// Asynchronously retrieves Norwegian public holidays for the year 2023 from the calendar backend.
     /// </summary>
-    /// <returns>A task that represents the asynchronous operation. The task result contains the response content as a string.</returns>
     [Resilient(maxAttempts: 8, initialDelaySeconds: 2)]
     public async Task<string> GetNorwegianHolidaysAsync()
     {
         Console.WriteLine("Calling Norwegian backend...");
-        var request = new HttpRequestMessage(HttpMethod.Get, "/v1/calendar/holidays/NO/2023");
-        request.Headers.Add("accept", "*/*");
-        request.Headers.Add("X-API-KEY", "Skyw@lker!");
+        return await GetHolidaysAsync("/v1/calendar/holidays/NO/2023");
+    }
+
+    /// <summary>
+    /// Shared HTTP execution logic for holiday endpoints.
+    /// </summary>
+    private async Task<string> GetHolidaysAsync(string path)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, path);
+        AddDefaultHeaders(request);
 
         var response = await Client.SendAsync(request);
         response.EnsureSuccessStatusCode();
 
         return await response.Content.ReadAsStringAsync();
+    }
+
+    /// <summary>
+    /// Centralized request headers for calendar API calls.
+    /// </summary>
+    private void AddDefaultHeaders(HttpRequestMessage request)
+    {
+        request.Headers.Add("accept", "*/*");
+        request.Headers.Add("X-API-KEY", "Skyw@lker!");
     }
 }
