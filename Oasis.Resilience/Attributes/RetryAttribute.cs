@@ -15,25 +15,25 @@ public sealed class RetryAttribute : Attribute
     public int MaxAttempts { get; }
 
     /// <summary>
-    /// Gets the initial delay, in seconds, before starting the operation.
+    /// Gets the initial delay, in milliseconds, before starting the operation.
     /// </summary>
-    public int InitialDelaySeconds { get; }
+    public int InitialDelay { get; }
 
     /// <summary>
     /// Initializes a new instance of the RetryAttribute class.
     /// Default values are 5 retry attempts and an initial delay of 2 seconds.
     /// </summary>
     /// <param name="maxAttempts">The maximum number of retry attempts. Default is 5.</param>
-    /// <param name="initialDelaySeconds">The initial delay between attempts, in seconds. Default is 2.</param>
+    /// <param name="initialDelay">The initial delay between attempts, in milliseconds. Default is 2000.</param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when maxAttempts is less than 1 or initialDelaySeconds is negative.
+    /// Thrown when maxAttempts is less than 1 or initialDelay is negative.
     /// </exception>
-    public RetryAttribute(int maxAttempts = 5, int initialDelaySeconds = 2)
+    public RetryAttribute(int maxAttempts = 5, int initialDelay = 2000)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxAttempts, 1);
-        ArgumentOutOfRangeException.ThrowIfNegative(initialDelaySeconds);
+        ArgumentOutOfRangeException.ThrowIfNegative(initialDelay);
 
         MaxAttempts = maxAttempts;
-        InitialDelaySeconds = initialDelaySeconds;
+        InitialDelay = initialDelay;
     }
 }

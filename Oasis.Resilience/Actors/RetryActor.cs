@@ -1,6 +1,7 @@
 ﻿namespace Oasis.Resilience.Actors;
 
 using Akka.Actor;
+using Microsoft.Extensions.Logging;
 
 /// <summary>
 /// An Akka.NET actor that executes operations with configurable retry logic and exponential backoff for resilience.
@@ -72,18 +73,19 @@ public sealed class RetryActor : ReceiveActor
             }
         }
 
-        Log("Max retry attempts reached. Failing.");
+        //Log("Max retry attempts reached. Failing.");
         Sender.Tell(new Status.Failure(lastException!));
     }
 
     /// <summary>
-    /// Logs a message to the console when verbose logging is enabled.
+    /// Logs a message to the console when the log level is set to debug.
     /// </summary>
     /// <param name="message">The message to write to the console.</param>
     private void Log(string message)
     {
-        if (!_options.VerboseLogging) 
+        if (_options.LogLevel > LogLevel.Debug)
             return;
+
         Console.WriteLine($"[Resilience] {message}");
     }
 }

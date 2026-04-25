@@ -96,7 +96,7 @@ public class ResilientProxy<T> : DispatchProxy
                         return await task;
                     },
                     attr.MaxAttempts,
-                    TimeSpan.FromSeconds(attr.InitialDelaySeconds)));
+                    TimeSpan.FromMilliseconds(attr.InitialDelay)));
 
         if (result is Status.Failure f)  throw f.Cause;
 

@@ -1,9 +1,10 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Oasis.Resilience;
 using ResilienceWithAop;
 
 var services = new ServiceCollection();
-services.AddResilience(options => options.VerboseLogging = true)
+services.AddResilience()
     .AddResilientService<ITiwazService, TiwazService>();
 
 using var serviceProvider = services.BuildServiceProvider();
@@ -34,5 +35,5 @@ Console.ReadLine();
 
 services.Configure<RetryOptions>("ResilienceOptions", options =>
 {
-    options.VerboseLogging = true;
+    options.LogLevel = LogLevel.Debug;
 });

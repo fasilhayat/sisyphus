@@ -1,11 +1,12 @@
 ﻿using Demo.Bonds;
 using Demo.Calendar;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Oasis.Resilience;
 
 var services = new ServiceCollection();
 
-services.AddResilience(options => options.VerboseLogging = true).AddResilientService<ICalendarService, CalendarService>();
+services.AddResilience(options => options.LogLevel = LogLevel.Debug).AddResilientService<ICalendarService, CalendarService>();
 services.AddResilience().AddResilientService<ITiwazService, TiwazService>();
 
 using var serviceProvider = services.BuildServiceProvider();
