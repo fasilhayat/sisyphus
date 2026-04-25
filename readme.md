@@ -262,7 +262,7 @@ That flow mirrors the things Akka is especially good at: message boundaries, sup
 
 ```csharp
 [Retry(maxAttempts = 4, initialDelaySeconds = 2)]
-[CircuitBreaker(failureThreshold = 5, resetMs = 5000)]
+[CircuitBreaker(failureThreshold = 5, resetSeconds = 5)]
 [Timeout(milliseconds = 3000)]
 public interface IMemberClient
 {
@@ -276,7 +276,7 @@ You can extend this with one combined attribute if you want fewer decorations:
 [Resilience(
     maxAttempts = 4,
     initialDelaySeconds = 2,
-    timeoutSeconds = 3,
+    timeout = 3000,
     failureThreshold = 5,
     resetSeconds = 5)]
 ```
