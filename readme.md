@@ -276,9 +276,9 @@ You can extend this with one combined attribute if you want fewer decorations:
 [Resilience(
     maxAttempts = 4,
     initialDelaySeconds = 2,
-    timeoutMs = 3000,
+    timeoutSeconds = 3,
     failureThreshold = 5,
-    resetMs = 5000)]
+    resetSeconds = 5)]
 ```
 
 That makes usage easier for other programmers, because they only need to learn one shape and one set of defaults.
