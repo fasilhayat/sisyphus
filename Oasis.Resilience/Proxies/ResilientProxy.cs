@@ -10,15 +10,15 @@ using System.Reflection;
 /// Provides a dynamic proxy that adds resilience features to method invocations on decorated instances, using an
 /// actor-based retry mechanism.
 /// </summary>
-/// <remarks>Methods decorated with ResilientAttribute are executed with retry logic managed by a resilience
+/// <remarks>Methods decorated with RetryAttribute are executed with retry logic managed by a resilience
 /// actor. Only asynchronous methods returning Task<T> are supported.</remarks>
 /// <typeparam name="T">The interface or class type to proxy.</typeparam>
 public class ResilientProxy<T> : DispatchProxy
 {
     /// <summary>
-    /// Caches ResilientAttribute instances associated with MethodInfo objects for efficient retrieval.
+    /// Caches RetryAttribute instances associated with MethodInfo objects for efficient retrieval.
     /// </summary>
-    private static readonly ConcurrentDictionary<MethodInfo, ResilientAttribute?> AttributeCache = new();
+    private static readonly ConcurrentDictionary<MethodInfo, RetryAttribute?> AttributeCache = new();
 
     /// <summary>
     /// Gets or sets the instance being decorated.
@@ -32,7 +32,7 @@ public class ResilientProxy<T> : DispatchProxy
 
     /// <summary>
     /// Invokes the specified method on the decorated instance, applying resilience logic if the method is decorated
-    /// with a ResilientAttribute.
+    /// with a RetryAttribute.
     /// </summary>
     /// <param name="targetMethod">The method to invoke.</param>
     /// <param name="args">An array of arguments to pass to the method.</param>
@@ -49,7 +49,7 @@ public class ResilientProxy<T> : DispatchProxy
 
         if (implementedMethod is null) throw new InvalidOperationException($"Implementation method not found: {targetMethod.Name}");
 
-        var attr = AttributeCache.GetOrAdd(implementedMethod, m => m.GetCustomAttribute<ResilientAttribute>());
+        var attr = AttributeCache.GetOrAdd(implementedMethod, m => m.GetCustomAttribute<RetryAttribute>());
 
         if (attr is null) 
             return targetMethod.Invoke(DecoratedInstance, args);
@@ -65,7 +65,7 @@ public class ResilientProxy<T> : DispatchProxy
     /// <param name="attr">The resilience configuration attribute.</param>
     /// <returns>The result of the invoked method.</returns>
     /// <exception cref="InvalidOperationException">Thrown when the method does not return a generic Task<T>.</exception>
-    private object InvokeResilient(MethodInfo implementedMethod, object[] args,  ResilientAttribute attr)
+    private object InvokeResilient(MethodInfo implementedMethod, object[] args,  RetryAttribute attr)
     {
         var returnType = implementedMethod.ReturnType;
 
@@ -86,10 +86,10 @@ public class ResilientProxy<T> : DispatchProxy
     /// <param name="args">The arguments to pass to the method.</param>
     /// <param name="attr">The resilience configuration attributes.</param>
     /// <returns>A task representing the asynchronous operation, containing the result of the invoked method.</returns>
-    private async Task<TResult> InvokeGeneric<TResult>(MethodInfo implementedMethod, object[] args, ResilientAttribute attr)
+    private async Task<TResult> InvokeGeneric<TResult>(MethodInfo implementedMethod, object[] args, RetryAttribute attr)
     {
         var result = await ResilienceActorRef.Ask<object>(
-                new ResilienceActor.Execute(
+                new RetryActor.Execute(
                     async () =>
                     {
                         var task = (Task<TResult>) implementedMethod.Invoke(DecoratedInstance, args)!;

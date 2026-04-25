@@ -29,7 +29,7 @@ internal sealed class ResilienceRuntime
     public ResilienceRuntime(IOptions<ResilienceOptions> options)
     {
         _options = options.Value;
-        Actor = System.ActorOf(Props.Create(() => new ResilienceActor(_options)), "resilience");
+        Actor = System.ActorOf(Props.Create(() => new RetryActor(_options)), "resilience");
     }
 
     /// <summary>

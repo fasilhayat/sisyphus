@@ -9,7 +9,7 @@ public class TiwazService : ITiwazService
             BaseAddress = new Uri( "https://tiwaz.hayatnet.local")
         };
 
-    [Resilient(maxAttempts: 5, initialDelaySeconds: 2)]
+    [Retry(maxAttempts: 5, initialDelaySeconds: 2)]
     public async Task<string> GetBondsAsync()
     {
         var req =  new HttpRequestMessage(HttpMethod.Get, "/v1/bonds");

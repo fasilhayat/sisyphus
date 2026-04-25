@@ -9,7 +9,7 @@ using Akka.Actor;
 /// Handles execution requests by retrying failed operations up to a specified number of attempts,
 /// applying an exponential delay between retries. Reports success or failure to the sender.
 /// </remarks>
-public sealed class ResilienceActor : ReceiveActor
+public sealed class RetryActor : ReceiveActor
 {
     /// <summary>
     /// Provides resilience configuration settings used by the actor, including whether
@@ -26,10 +26,10 @@ public sealed class ResilienceActor : ReceiveActor
     public sealed record Execute(Func<Task<object>> Operation, int MaxAttempts, TimeSpan InitialDelay);
 
     /// <summary>
-    /// Initializes a new instance of the ResilienceActor class and sets up message handling with retry logic.
+    /// Initializes a new instance of the RetryActor class and sets up message handling with retry logic.
     /// </summary>
     /// <param name="options">The resilience configuration options.</param>
-    public ResilienceActor(ResilienceOptions options)
+    public RetryActor(ResilienceOptions options)
     {
         _options = options;
         ReceiveAsync<Execute>(ExecuteWithRetry);

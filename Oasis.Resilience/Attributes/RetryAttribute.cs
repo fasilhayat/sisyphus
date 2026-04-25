@@ -7,7 +7,7 @@
 /// <remarks>Apply to methods that require resilience against transient failures, such as network or I/O
 /// operations.</remarks>
 [AttributeUsage(AttributeTargets.Method)]
-public sealed class ResilientAttribute : Attribute
+public sealed class RetryAttribute : Attribute
 {
     /// <summary>
     /// Gets the maximum number of allowed attempts.
@@ -20,7 +20,7 @@ public sealed class ResilientAttribute : Attribute
     public int InitialDelaySeconds { get; }
 
     /// <summary>
-    /// Initializes a new instance of the ResilientAttribute class.
+    /// Initializes a new instance of the RetryAttribute class.
     /// Default values are 5 retry attempts and an initial delay of 2 seconds.
     /// </summary>
     /// <param name="maxAttempts">The maximum number of retry attempts. Default is 5.</param>
@@ -28,7 +28,7 @@ public sealed class ResilientAttribute : Attribute
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown when maxAttempts is less than 1 or initialDelaySeconds is negative.
     /// </exception>
-    public ResilientAttribute(int maxAttempts = 5, int initialDelaySeconds = 2)
+    public RetryAttribute(int maxAttempts = 5, int initialDelaySeconds = 2)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxAttempts, 1);
         ArgumentOutOfRangeException.ThrowIfNegative(initialDelaySeconds);

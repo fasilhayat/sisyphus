@@ -17,7 +17,7 @@ public class CalendarService : ICalendarService
     /// <summary>
     /// Asynchronously retrieves Danish public holidays for the year 2001 from the calendar backend.
     /// </summary>
-    [Resilient(maxAttempts: 2, initialDelaySeconds: 2)]
+    [Retry(maxAttempts: 2, initialDelaySeconds: 2)]
     public async Task<string> GetDanishHolidaysAsync()
     {
         Console.WriteLine("Calling DanishHolidays backend...");
@@ -27,7 +27,7 @@ public class CalendarService : ICalendarService
     /// <summary>
     /// Asynchronously retrieves Norwegian public holidays for the year 2023 from the calendar backend.
     /// </summary>
-    [Resilient(maxAttempts: 8, initialDelaySeconds: 2)]
+    [Retry(maxAttempts: 8, initialDelaySeconds: 2)]
     public async Task<string> GetNorwegianHolidaysAsync()
     {
         Console.WriteLine("Calling Norwegian backend...");
