@@ -15,7 +15,7 @@ public sealed class RetryActor : ReceiveActor
     /// Provides resilience configuration settings used by the actor, including whether
     /// verbose retry diagnostics should be written during execution.
     /// </summary>
-    private readonly ResilienceOptions _options;
+    private readonly RetryOptions _options;
 
     /// <summary>
     /// Represents an executable operation with retry logic and configurable delay between attempts.
@@ -29,7 +29,7 @@ public sealed class RetryActor : ReceiveActor
     /// Initializes a new instance of the RetryActor class and sets up message handling with retry logic.
     /// </summary>
     /// <param name="options">The resilience configuration options.</param>
-    public RetryActor(ResilienceOptions options)
+    public RetryActor(RetryOptions options)
     {
         _options = options;
         ReceiveAsync<Execute>(ExecuteWithRetry);

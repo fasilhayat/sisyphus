@@ -32,7 +32,7 @@ catch (Exception ex)
 Console.WriteLine("Press ENTER to terminate...");
 Console.ReadLine();
 
-services.Configure<ResilienceOptions>("ResilienceOptions", options =>
+services.Configure<RetryOptions>("ResilienceOptions", options =>
 {
     options.VerboseLogging = true;
 });

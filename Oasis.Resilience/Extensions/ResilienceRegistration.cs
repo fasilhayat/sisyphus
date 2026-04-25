@@ -17,9 +17,9 @@ public static class ResilienceRegistration
     /// <param name="services">The service collection to add services to.</param>
     /// <param name="configureOptions">An optional action to configure resilience options.</param>
     /// <returns>The updated service collection.</returns>
-    public static IServiceCollection AddResilience(this IServiceCollection services, Action<ResilienceOptions>? configureOptions = null)
+    public static IServiceCollection AddResilience(this IServiceCollection services, Action<RetryOptions>? configureOptions = null)
     {
-        services.Configure<ResilienceOptions>(options =>
+        services.Configure<RetryOptions>(options =>
         {
             configureOptions?.Invoke(options);
         });

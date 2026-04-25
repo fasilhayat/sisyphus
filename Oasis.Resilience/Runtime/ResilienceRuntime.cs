@@ -11,7 +11,7 @@ using Oasis.Resilience.Actors;
 /// message handling.</remarks>
 internal sealed class ResilienceRuntime
 {
-    private readonly ResilienceOptions _options;
+    private readonly RetryOptions _options;
 
     /// <summary>
     /// Gets the actor system used for managing actors and message processing.
@@ -26,7 +26,7 @@ internal sealed class ResilienceRuntime
     /// <summary>
     /// Initializes a new instance of the ResilienceRuntime class and creates the resilience actor.
     /// </summary>
-    public ResilienceRuntime(IOptions<ResilienceOptions> options)
+    public ResilienceRuntime(IOptions<RetryOptions> options)
     {
         _options = options.Value;
         Actor = System.ActorOf(Props.Create(() => new RetryActor(_options)), "resilience");
