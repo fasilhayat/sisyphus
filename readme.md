@@ -28,7 +28,7 @@ catch (Exception)
 You declare intent:
 
 ```csharp
-[Retry(maxAttempts: 2, initialDelaySeconds: 2)]
+[Retry(maxAttempts: 2, initialDelay: 2000)]
 public async Task<string> GetDataAsync()
 ```
 
@@ -82,7 +82,7 @@ It declares that a method must be executed with:
 ### Example
 
 ```csharp
-[Retry(maxAttempts: 3, initialDelaySeconds: 2)]
+[Retry(maxAttempts: 3, initialDelay: 2000)]
 public async Task<string> CallExternalApi()
 ```
 
@@ -261,8 +261,8 @@ That flow mirrors the things Akka is especially good at: message boundaries, sup
 ## Example attributes
 
 ```csharp
-[Retry(maxAttempts = 4, initialDelaySeconds = 2)]
-[CircuitBreaker(failureThreshold = 5, resetSeconds = 5)]
+[Retry(maxAttempts = 4, initialDelay = 2000)]
+[CircuitBreaker(failureThreshold = 5, reset = 5000)]
 [Timeout(milliseconds = 3000)]
 public interface IMemberClient
 {
@@ -275,10 +275,10 @@ You can extend this with one combined attribute if you want fewer decorations:
 ```csharp
 [Resilience(
     maxAttempts = 4,
-    initialDelaySeconds = 2,
+    initialDelays = 2000,
     timeout = 3000,
     failureThreshold = 5,
-    resetSeconds = 5)]
+    reset = 5000)]
 ```
 
 That makes usage easier for other programmers, because they only need to learn one shape and one set of defaults.
@@ -290,11 +290,11 @@ That makes usage easier for other programmers, because they only need to learn o
 public sealed class RetryAttribute : Attribute
 {
     public int MaxAttempts { get; }
-    public int InitialDelaySeconds { get; }
-    public RetryAttribute(int maxAttempts = 3, int initialDelaySeconds = 2)
+    public int InitialDelayM { get; }
+    public RetryAttribute(int maxAttempts = 3, int initialDelay = 2)
     {
         MaxAttempts = maxAttempts;
-        InitialDelaySeconds = initialDelaySeconds;
+        InitialDelay = initialDelay;
     }
 }
 
@@ -302,11 +302,11 @@ public sealed class RetryAttribute : Attribute
 public sealed class CircuitBreakerAttribute : Attribute
 {
     public int FailureThreshold { get; }
-    public int ResetSeconds { get; }
-    public CircuitBreakerAttribute(int failureThreshold = 5, int resetSeconds = 4)
+    public int Reset { get; }
+    public CircuitBreakerAttribute(int failureThreshold = 5, int reset = 4)
     {
         FailureThreshold = failureThreshold;
-        Reset = resetSeconds;
+        Reset = resets;
     }
 }
 
