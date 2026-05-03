@@ -7,11 +7,18 @@ using Oasis.Resilience.Actors;
 /// <summary>
 /// Provides runtime management for the resilience actor system, including initialization and shutdown.
 /// </summary>
-/// <remarks>Manages the lifecycle of the underlying actor system and exposes the primary resilience actor for
-/// message handling.</remarks>
+/// <remarks>Manages the lifecycle of the underlying actor system and exposes resilience actors for message handling.</remarks>
 internal sealed class ResilienceRuntime
 {
-    private readonly RetryOptions _options;
+    /// <summary>
+    /// Stores the retry configuration options used for the retry actor.
+    /// </summary>
+    private readonly RetryOptions _retryOptions;
+
+    /// <summary>
+    /// Stores the circuit breaker configuration options (unused but available for future use).
+    /// </summary>
+    private readonly CircuitBreakerOptions _breakerOptions;
 
     /// <summary>
     /// Gets the actor system used for managing actors and message processing.
@@ -19,17 +26,25 @@ internal sealed class ResilienceRuntime
     public ActorSystem System { get; } = ActorSystem.Create("resilience-system");
 
     /// <summary>
-    /// Gets the actor reference associated with this instance.
+    /// Gets the actor reference associated with retry operations.
     /// </summary>
-    public IActorRef Actor { get; }
+    public IActorRef RetryActor { get; }
 
     /// <summary>
-    /// Initializes a new instance of the ResilienceRuntime class and creates the resilience actor.
+    /// Gets the actor reference associated with circuit breaker operations.
     /// </summary>
-    public ResilienceRuntime(IOptions<RetryOptions> options)
+    public IActorRef CircuitBreakerActor { get; }
+
+    /// <summary>
+    /// Initializes a new instance of the ResilienceRuntime class and creates the resilience actors.
+    /// </summary>
+    public ResilienceRuntime(IOptions<RetryOptions> retryOptions, IOptions<CircuitBreakerOptions> breakerOptions)
     {
-        _options = options.Value;
-        Actor = System.ActorOf(Props.Create(() => new RetryActor(_options)), "resilience");
+        _retryOptions = retryOptions.Value;
+        _breakerOptions = breakerOptions.Value;
+
+        RetryActor = System.ActorOf(Props.Create(() => new RetryActor(_retryOptions)), "resilience");
+        CircuitBreakerActor = System.ActorOf(Props.Create(() => new CircuitBreakerActor(_retryOptions)), "circuit-breaker");
     }
 
     /// <summary>

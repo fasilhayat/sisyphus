@@ -2,8 +2,14 @@
 
 using Oasis.Resilience.Attributes;
 
+/// <summary>
+/// Implements the Tiwaz service for retrieving bonds data with AOP-based resilience.
+/// </summary>
 public class TiwazService : ITiwazService
 {
+    /// <summary>
+    /// Provides a static HTTP client configured with the Tiwaz service base address.
+    /// </summary>
     private static readonly HttpClient Client = new()
         {
             BaseAddress = new Uri( "https://tiwaz.hayatnet.local")

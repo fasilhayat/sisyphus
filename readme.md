@@ -102,6 +102,110 @@ When the method is invoked:
 
 ---
 
+## The Circuit Breaker Pattern
+
+The `[CircuitBreaker]` attribute implements the circuit breaker pattern, which prevents cascading failures by stopping calls to a failing service after a configurable threshold of consecutive failures.
+
+### Purpose
+
+It protects your system from:
+
+- Cascading failures when downstream services are unhealthy
+- Resource exhaustion from waiting on unresponsive services
+- Thundering herd problems when a service recovers
+
+### States
+
+The circuit breaker operates in three states:
+
+1. **Closed** - Normal operation. Requests flow through. Failures are counted.
+2. **Open** - Failure threshold exceeded. Requests fail immediately without executing the operation.
+3. **Half-Open** - Reset timeout elapsed. A limited number of test requests are allowed through to probe if the service has recovered.
+
+### Example
+
+```csharp
+[CircuitBreaker(failureThreshold: 3, resetTimeout: 10000, maxConcurrentCalls: 2)]
+[Retry(maxAttempts: 4, initialDelay: 1000)]
+public async Task<string> GetInventoryAsync()
+```
+
+### What happens at runtime
+
+When the method is invoked:
+
+1. The call is intercepted by the AOP pipeline.
+2. The circuit breaker state is checked for the operation.
+3. If **Closed**: the operation executes. Failures increment the counter.
+4. If **Open**: the call fails immediately with `CircuitBreakerOpenException`.
+5. If **Half-Open**: a limited number of test calls are allowed through.
+6. On success in Half-Open state: circuit transitions back to **Closed**.
+7. On failure in Half-Open state: circuit transitions back to **Open**.
+
+### Combining Circuit Breaker with Retry
+
+The circuit breaker and retry attributes work together:
+
+```csharp
+[CircuitBreaker(failureThreshold: 3, resetTimeout: 10000)]
+[Retry(maxAttempts: 4, initialDelay: 1000)]
+public async Task<string> GetDataAsync()
+```
+
+- **Retry** handles transient failures (temporary network blips, brief timeouts)
+- **Circuit Breaker** prevents repeated attempts when a service is clearly down
+- The circuit breaker wraps the retry, so if the circuit is open, retries are never attempted
+
+---
+
+## Parameter Reference
+
+### Retry Attribute Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `maxAttempts` | `int` | 5 | The maximum number of times the operation will be attempted. This includes the initial attempt, so a value of 3 means one original call plus two retries. Must be at least 1. |
+| `initialDelay` | `int` (milliseconds) | 2000 | The base delay before the first retry. The delay between subsequent retries grows exponentially using the formula: `initialDelay * 2^(attempt - 1)`. For example, with `initialDelay: 1000`, delays would be: 1s, 2s, 4s, 8s... Must be zero or greater. |
+
+**Example delays with `initialDelay: 1000`:**
+- Attempt 1: immediate
+- Attempt 2: 1 second delay
+- Attempt 3: 2 seconds delay
+- Attempt 4: 4 seconds delay
+- Attempt 5: 8 seconds delay
+
+### Circuit Breaker Attribute Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `failureThreshold` | `int` | 5 | The number of consecutive failures required before the circuit transitions to **Open** state. Once open, all subsequent calls fail immediately without executing the underlying operation. Must be at least 1. A lower value makes the circuit more sensitive to failures. |
+| `resetTimeout` | `int` (milliseconds) | 30000 | The duration the circuit remains in **Open** state before transitioning to **Half-Open**. During this time, no calls are executed. After this period, test calls are allowed through to check if the service has recovered. Must be zero or greater. |
+| `maxConcurrentCalls` | `int` | 1 | The maximum number of concurrent calls allowed when the circuit is in **Half-Open** state. These test calls determine whether the service has recovered. A value of 1 means only one test call is allowed; if it succeeds, the circuit closes. If it fails, the circuit reopens. Must be at least 1. |
+
+**State transition example with `failureThreshold: 3, resetTimeout: 10000`:**
+1. Three consecutive failures occur → circuit opens
+2. For the next 10 seconds, all calls fail immediately
+3. After 10 seconds, circuit transitions to half-open
+4. One test call (maxConcurrentCalls: 1) is allowed through
+5. If it succeeds → circuit closes, normal operation resumes
+6. If it fails → circuit reopens, another 10 second wait begins
+
+### RetryOptions Configuration
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `LogLevel` | `LogLevel` | `Debug` | Controls the verbosity of diagnostic logging. Set to `LogLevel.Debug` to see retry attempt messages, or a higher level (e.g., `LogLevel.Information`, `LogLevel.Warning`) to suppress them. |
+
+### CircuitBreakerOptions Configuration
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DefaultFailureThreshold` | `int` | 5 | The global default failure threshold applied when a `[CircuitBreaker]` attribute does not specify `failureThreshold`. Can be overridden per-method via the attribute. |
+| `DefaultResetTimeout` | `int` (milliseconds) | 30000 | The global default reset timeout applied when a `[CircuitBreaker]` attribute does not specify `resetTimeout`. Can be overridden per-method via the attribute. |
+| `DefaultMaxConcurrentCalls` | `int` | 1 | The global default max concurrent calls applied when a `[CircuitBreaker]` attribute does not specify `maxConcurrentCalls`. Can be overridden per-method via the attribute. |
+
+---
+
 ## What We Are Abstracting Away
 
 This system removes several recurring concerns from application code:
