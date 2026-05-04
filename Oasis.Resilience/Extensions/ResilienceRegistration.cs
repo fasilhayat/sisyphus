@@ -20,7 +20,9 @@ public static class ResilienceRegistration
     public static IServiceCollection AddResilience(
         this IServiceCollection services,
         Action<RetryOptions>? configureRetryOptions = null,
-        Action<CircuitBreakerOptions>? configureBreakerOptions = null)
+        Action<CircuitBreakerOptions>? configureBreakerOptions = null,
+        Action<SupervisionOptions>? configureSupervisionOptions = null,
+        Action<FanOutOptions>? configureFanOutOptions = null)
     {
         services.Configure<RetryOptions>(options =>
         {
@@ -30,6 +32,16 @@ public static class ResilienceRegistration
         services.Configure<CircuitBreakerOptions>(options =>
         {
             configureBreakerOptions?.Invoke(options);
+        });
+
+        services.Configure<SupervisionOptions>(options =>
+        {
+            configureSupervisionOptions?.Invoke(options);
+        });
+
+        services.Configure<FanOutOptions>(options =>
+        {
+            configureFanOutOptions?.Invoke(options);
         });
 
         services.AddSingleton<ResilienceRuntime>();
@@ -57,6 +69,9 @@ public static class ResilienceRegistration
             p.DecoratedInstance = new TImplementation();
             p.ResilienceActorRef = runtime.RetryActor;
             p.CircuitBreakerActorRef = runtime.CircuitBreakerActor;
+            p.ActorSystem = runtime.System;
+            p.SupervisionOptions = runtime.SupervisionOptions;
+            p.FanOutOptions = runtime.FanOutOptions;
             return proxy;
         });
 

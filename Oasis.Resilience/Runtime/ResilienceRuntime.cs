@@ -21,6 +21,16 @@ internal sealed class ResilienceRuntime
     private readonly CircuitBreakerOptions _breakerOptions;
 
     /// <summary>
+    /// Stores the supervision configuration options.
+    /// </summary>
+    private readonly SupervisionOptions _supervisionOptions;
+
+    /// <summary>
+    /// Stores the fan-out configuration options.
+    /// </summary>
+    private readonly FanOutOptions _fanOutOptions;
+
+    /// <summary>
     /// Gets the actor system used for managing actors and message processing.
     /// </summary>
     public ActorSystem System { get; } = ActorSystem.Create("resilience-system");
@@ -36,12 +46,28 @@ internal sealed class ResilienceRuntime
     public IActorRef CircuitBreakerActor { get; }
 
     /// <summary>
+    /// Gets the supervision options for fallback values.
+    /// </summary>
+    public SupervisionOptions SupervisionOptions => _supervisionOptions;
+
+    /// <summary>
+    /// Gets the fan-out options for fallback values.
+    /// </summary>
+    public FanOutOptions FanOutOptions => _fanOutOptions;
+
+    /// <summary>
     /// Initializes a new instance of the ResilienceRuntime class and creates the resilience actors.
     /// </summary>
-    public ResilienceRuntime(IOptions<RetryOptions> retryOptions, IOptions<CircuitBreakerOptions> breakerOptions)
+    public ResilienceRuntime(
+        IOptions<RetryOptions> retryOptions,
+        IOptions<CircuitBreakerOptions> breakerOptions,
+        IOptions<SupervisionOptions> supervisionOptions,
+        IOptions<FanOutOptions> fanOutOptions)
     {
         _retryOptions = retryOptions.Value;
         _breakerOptions = breakerOptions.Value;
+        _supervisionOptions = supervisionOptions.Value;
+        _fanOutOptions = fanOutOptions.Value;
 
         RetryActor = System.ActorOf(Props.Create(() => new RetryActor(_retryOptions)), "resilience");
         CircuitBreakerActor = System.ActorOf(Props.Create(() => new CircuitBreakerActor(_retryOptions)), "circuit-breaker");

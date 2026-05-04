@@ -1,15 +1,49 @@
 ﻿using Demo.Bonds;
 using Demo.Calendar;
+using Demo.Holidays;
+using Demo.Holidays.Actors;
 using Demo.Inventory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Oasis.Resilience;
+using Oasis.Resilience.Proxies;
 
 var services = new ServiceCollection();
+
+// Register message factory for HolidayWorkerActor
+ResilientProxy<IHolidayService>.RegisterMessageFactory((workerType, splitValue, parameters, otherArgs) =>
+{
+    if (workerType == typeof(HolidayWorkerActor))
+    {
+        var year = (int)splitValue;
+        var country = (string)otherArgs[0];
+        return new HolidayWorkerActor.ProcessYear(year, country);
+    }
+    throw new InvalidOperationException($"Unknown worker type: {workerType.Name}");
+});
+
+// Register result aggregator for holiday service
+ResilientProxy<IHolidayService>.RegisterResultAggregator((results, workerType, returnType) =>
+{
+    if (returnType == typeof(Dictionary<int, string>) && workerType == typeof(HolidayWorkerActor))
+    {
+        var dict = new Dictionary<int, string>();
+        foreach (var result in results)
+        {
+            if (result is HolidayWorkerActor.YearProcessed processed)
+            {
+                dict[processed.Year] = processed.Content;
+            }
+        }
+        return dict;
+    }
+    throw new InvalidOperationException($"Unsupported return type {returnType.Name} for worker {workerType.Name}");
+});
 
 services.AddResilience(options => options.LogLevel = LogLevel.Debug).AddResilientService<ICalendarService, CalendarService>();
 services.AddResilience().AddResilientService<ITiwazService, TiwazService>();
 services.AddResilience().AddResilientService<IInventoryService, InventoryService>();
+services.AddResilience().AddResilientService<IHolidayService, HolidayService>();
 
 using var serviceProvider = services.BuildServiceProvider();
 
@@ -122,4 +156,98 @@ static void PrintTaskResult(string name, Task<string> task)
     }
 
     Console.WriteLine($"{name} ended in unexpected state.");
+}
+
+var holidayService = serviceProvider.GetRequiredService<IHolidayService>();
+
+Console.WriteLine();
+Console.ForegroundColor = ConsoleColor.Cyan;
+Console.WriteLine("Demonstrating Fan-Out with Supervision...");
+Console.WriteLine("Fan-out sends work to multiple actors for parallel processing.");
+Console.ResetColor();
+Console.WriteLine();
+
+try
+{
+    Console.WriteLine("Calling GetNorwegianHolidaysAsync (supervised with retry)...");
+    var norwegianTask = holidayService.GetNorwegianHolidaysAsync(2024);
+    await SafeAwaitString(norwegianTask, "Norwegian Holidays");
+    PrintTaskResultString("Norwegian Holidays", norwegianTask);
+
+    Console.WriteLine();
+    Console.WriteLine("Calling GetHolidaysForYearsAsync (fan-out to multiple workers)...");
+    var years = new[] { 2022, 2023, 2024, 2025 };
+    var fanOutTask = holidayService.GetHolidaysForYearsAsync(years, "norway");
+    await SafeAwaitDict(fanOutTask, "Fan-Out Holidays");
+    
+    if (fanOutTask.IsCompletedSuccessfully)
+    {
+        Console.WriteLine("Fan-Out succeeded:");
+        foreach (var kvp in fanOutTask.Result)
+        {
+            Console.WriteLine($"  Year {kvp.Key}: {kvp.Value.Substring(0, Math.Min(50, kvp.Value.Length))}...");
+        }
+    }
+}
+catch (Exception ex)
+{
+    Console.ForegroundColor = ConsoleColor.Red;
+    Console.WriteLine($"Holiday operations failed: {ex.Message}");
+    Console.ResetColor();
+}
+
+Console.WriteLine();
+Console.WriteLine("Press ENTER to terminate...");
+Console.ReadLine();
+
+static async Task SafeAwaitString(Task<string> task, string name)
+{
+    try
+    {
+        await task;
+    }
+    catch (Exception ex)
+    {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine($"{name} encountered an error: {ex.Message}");
+        Console.ResetColor();
+    }
+}
+
+static void PrintTaskResultString(string name, Task<string> task)
+{
+    if (task.IsCompletedSuccessfully)
+    {
+        Console.WriteLine($"{name} succeeded:");
+        Console.WriteLine(task.Result);
+        return;
+    }
+
+    if (task.IsFaulted)
+    {
+        Console.WriteLine($"{name} failed: {task.Exception?.GetBaseException().Message}");
+        return;
+    }
+
+    if (task.IsCanceled)
+    {
+        Console.WriteLine($"{name} was cancelled.");
+        return;
+    }
+
+    Console.WriteLine($"{name} ended in unexpected state.");
+}
+
+static async Task SafeAwaitDict(Task<Dictionary<int, string>> task, string name)
+{
+    try
+    {
+        await task;
+    }
+    catch (Exception ex)
+    {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine($"{name} encountered an error: {ex.Message}");
+        Console.ResetColor();
+    }
 }

@@ -158,6 +158,126 @@ public async Task<string> GetDataAsync()
 
 ---
 
+## The Supervision Attribute
+
+The `[Supervision]` attribute integrates Akka.NET's supervision strategies with the AOP layer, allowing declarative configuration of actor failure handling.
+
+### Purpose
+
+It enables:
+- Actor restart with configurable backoff
+- Different supervision strategies (Restart, Stop, Escalate, Resume, RestartWithBackoff)
+- Integration with Akka.NET's supervision hierarchy
+- Declarative failure handling without manual actor management
+
+### Supervision Strategies
+
+| Strategy | Description |
+|----------|-------------|
+| `Restart` | Restart the actor when it fails |
+| `Stop` | Stop the actor when it fails |
+| `Escalate` | Escalate the failure to the parent actor |
+| `Resume` | Resume the actor without restarting when it fails |
+| `RestartWithBackoff` | Restart the actor with exponential backoff when it fails |
+
+### Example
+
+```csharp
+[Supervision(strategy: SupervisionStrategy.RestartWithBackoff, maxRetries: 5, backoffMinMs: 2000, backoffMaxMs: 30000)]
+[Retry(maxAttempts: 3, initialDelay: 2000)]
+public async Task<string> GetDataWithSupervisionAsync()
+```
+
+### What happens at runtime
+
+When a method with `[Supervision]` is invoked:
+
+1. The AOP layer creates or reuses a supervised actor
+2. If `RestartWithBackoff` is specified, a `BackoffSupervisor` manages the actor
+3. On failure, the configured strategy is applied
+4. The actor is restarted/stopped/escalated based on the strategy
+5. Backoff delays prevent tight failure loops
+
+---
+
+## The Fan-Out Attribute
+
+The `[FanOut]` attribute enables parallel processing by distributing work across multiple actor workers, with built-in supervision.
+
+### Purpose
+
+It allows:
+- Automatic fan-out of work to multiple actors
+- Parallel processing of collections/arrays
+- Aggregation of results from multiple workers
+- Transparent actor management with supervision
+
+### Example
+
+```csharp
+[FanOut(
+    workerActorType: typeof(HolidayWorkerActor),
+    splitParameterName: "years",
+    maxWorkers: 5
+)]
+[Supervision(strategy: SupervisionStrategy.RestartWithBackoff)]
+public async Task<Dictionary<int, string>> GetHolidaysForYearsAsync(int[] years, string country)
+```
+
+### How it works
+
+1. The `splitParameterName` identifies which parameter contains the data to split
+2. The method creates a supervisor for the specified `workerActorType`
+3. Work is distributed across up to `maxWorkers` actor instances
+4. Results are aggregated back into the expected return type
+5. Supervision is applied to each worker actor
+
+### Configuration
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `workerActorType` | `Type` | The type of worker actor to spawn |
+| `splitParameterName` | `string` | The name of the parameter to split for distribution |
+| `maxWorkers` | `int` | Maximum number of worker actors (default: 5) |
+
+### Message Factory and Result Aggregator
+
+Since the AOP layer needs to create messages and aggregate results generically, you must register a message factory and result aggregator:
+
+```csharp
+// Register message factory for your worker actor
+ResilientProxy<IHolidayService>.RegisterMessageFactory((workerType, splitValue, parameters, otherArgs) =>
+{
+    if (workerType == typeof(HolidayWorkerActor))
+    {
+        var year = (int)splitValue;
+        var country = (string)otherArgs[0];
+        return new HolidayWorkerActor.ProcessYear(year, country);
+    }
+    throw new InvalidOperationException($"Unknown worker type: {workerType.Name}");
+});
+
+// Register result aggregator
+ResilientProxy<IHolidayService>.RegisterResultAggregator((results, workerType, returnType) =>
+{
+    if (returnType == typeof(Dictionary<int, string>) && workerType == typeof(HolidayWorkerActor))
+    {
+        var dict = new Dictionary<int, string>();
+        foreach (var result in results)
+        {
+            if (result is HolidayWorkerActor.YearProcessed processed)
+            {
+                dict[processed.Year] = processed.Content;
+            }
+        }
+        return dict;
+    }
+    throw new InvalidOperationException($"Unsupported return type {returnType.Name} for worker {workerType.Name}");
+});
+```
+
+---
+
 ## Parameter Reference
 
 ### Retry Attribute Parameters
@@ -203,6 +323,24 @@ public async Task<string> GetDataAsync()
 | `DefaultFailureThreshold` | `int` | 5 | The global default failure threshold applied when a `[CircuitBreaker]` attribute does not specify `failureThreshold`. Can be overridden per-method via the attribute. |
 | `DefaultResetTimeout` | `int` (milliseconds) | 30000 | The global default reset timeout applied when a `[CircuitBreaker]` attribute does not specify `resetTimeout`. Can be overridden per-method via the attribute. |
 | `DefaultMaxConcurrentCalls` | `int` | 1 | The global default max concurrent calls applied when a `[CircuitBreaker]` attribute does not specify `maxConcurrentCalls`. Can be overridden per-method via the attribute. |
+
+### Supervision Attribute Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `strategy` | `SupervisionStrategy` | `RestartWithBackoff` | The supervision strategy to apply when the actor fails. Options: `Restart`, `Stop`, `Escalate`, `Resume`, `RestartWithBackoff`. |
+| `maxRetries` | `int` | 5 | The maximum number of retries before giving up. Must be at least 1. |
+| `backoffMinMs` | `int` (milliseconds) | 2000 | The minimum backoff duration. Must be zero or greater. |
+| `backoffMaxMs` | `int` (milliseconds) | 30000 | The maximum backoff duration. Must be zero or greater. |
+| `randomFactor` | `double` | 0.2 | The random factor to add jitter to backoff. Must be zero or greater. |
+
+### FanOut Attribute Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `workerActorType` | `Type` | (required) | The type of worker actor to spawn for processing. Must be a subclass of `ReceiveActor`. |
+| `splitParameterName` | `string` | (required) | The name of the parameter to split for fan-out distribution. |
+| `maxWorkers` | `int` | 5 | The maximum number of worker actors to spawn. Must be at least 1. |
 
 ---
 
