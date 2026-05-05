@@ -9,44 +9,87 @@ using Xunit;
 /// </summary>
 public class SupervisionOptionsTests
 {
-    /// <summary>
-    /// Tests that default values are set correctly.
-    /// </summary>
     [Fact]
-    public void Default_values_should_be_set_correctly()
+    public void DefaultStrategy_should_be_RestartWithBackoff()
     {
-        // Arrange & Act
+        // Arrange
         var options = new SupervisionOptions();
 
         // Assert
         Assert.Equal(SupervisionStrategy.RestartWithBackoff, options.DefaultStrategy);
+    }
+
+    [Fact]
+    public void DefaultMaxRetries_should_be_5()
+    {
+        // Arrange
+        var options = new SupervisionOptions();
+
+        // Assert
         Assert.Equal(5, options.DefaultMaxRetries);
+    }
+
+    [Fact]
+    public void DefaultBackoffMinMs_should_be_2000()
+    {
+        // Arrange
+        var options = new SupervisionOptions();
+
+        // Assert
         Assert.Equal(2000, options.DefaultBackoffMinMs);
+    }
+
+    [Fact]
+    public void DefaultBackoffMaxMs_should_be_30000()
+    {
+        // Arrange
+        var options = new SupervisionOptions();
+
+        // Assert
         Assert.Equal(30000, options.DefaultBackoffMaxMs);
+    }
+
+    [Fact]
+    public void DefaultRandomFactor_should_be_0_2()
+    {
+        // Arrange
+        var options = new SupervisionOptions();
+
+        // Assert
         Assert.Equal(0.2, options.DefaultRandomFactor);
     }
 
-    /// <summary>
-    /// Tests that values can be overridden via property setters.
-    /// </summary>
     [Fact]
-    public void Values_can_be_overridden_via_properties()
+    public void Should_allow_setting_DefaultStrategy()
+    {
+        // Arrange
+        var options = new SupervisionOptions();
+
+        // Act
+        options.DefaultStrategy = SupervisionStrategy.Restart;
+
+        // Assert
+        Assert.Equal(SupervisionStrategy.Restart, options.DefaultStrategy);
+    }
+
+    [Fact]
+    public void Should_allow_setting_all_properties()
     {
         // Arrange
         var options = new SupervisionOptions();
 
         // Act
         options.DefaultStrategy = SupervisionStrategy.Stop;
-        options.DefaultMaxRetries = 3;
+        options.DefaultMaxRetries = 10;
         options.DefaultBackoffMinMs = 1000;
-        options.DefaultBackoffMaxMs = 15000;
+        options.DefaultBackoffMaxMs = 60000;
         options.DefaultRandomFactor = 0.5;
 
         // Assert
         Assert.Equal(SupervisionStrategy.Stop, options.DefaultStrategy);
-        Assert.Equal(3, options.DefaultMaxRetries);
+        Assert.Equal(10, options.DefaultMaxRetries);
         Assert.Equal(1000, options.DefaultBackoffMinMs);
-        Assert.Equal(15000, options.DefaultBackoffMaxMs);
+        Assert.Equal(60000, options.DefaultBackoffMaxMs);
         Assert.Equal(0.5, options.DefaultRandomFactor);
     }
 }

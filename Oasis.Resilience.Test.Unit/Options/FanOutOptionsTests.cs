@@ -8,24 +8,18 @@ using Xunit;
 /// </summary>
 public class FanOutOptionsTests
 {
-    /// <summary>
-    /// Tests that default values are set correctly.
-    /// </summary>
     [Fact]
-    public void Default_values_should_be_set_correctly()
+    public void DefaultMaxWorkers_should_be_5()
     {
-        // Arrange & Act
+        // Arrange
         var options = new FanOutOptions();
 
         // Assert
         Assert.Equal(5, options.DefaultMaxWorkers);
     }
 
-    /// <summary>
-    /// Tests that values can be overridden via property setters.
-    /// </summary>
     [Fact]
-    public void Values_can_be_overridden_via_properties()
+    public void Should_allow_setting_DefaultMaxWorkers()
     {
         // Arrange
         var options = new FanOutOptions();
@@ -35,5 +29,31 @@ public class FanOutOptionsTests
 
         // Assert
         Assert.Equal(10, options.DefaultMaxWorkers);
+    }
+
+    [Fact]
+    public void Should_allow_setting_MaxWorkers_to_1()
+    {
+        // Arrange
+        var options = new FanOutOptions();
+
+        // Act
+        options.DefaultMaxWorkers = 1;
+
+        // Assert
+        Assert.Equal(1, options.DefaultMaxWorkers);
+    }
+
+    [Fact]
+    public void Should_allow_setting_MaxWorkers_to_100()
+    {
+        // Arrange
+        var options = new FanOutOptions();
+
+        // Act
+        options.DefaultMaxWorkers = 100;
+
+        // Assert
+        Assert.Equal(100, options.DefaultMaxWorkers);
     }
 }

@@ -94,12 +94,16 @@ public sealed class CircuitBreakerActor : ReceiveActor
     /// <param name="SuccessCount">The number of successful calls in half-open state.</param>
     /// <param name="OpenedAt">The time when the circuit transitioned to open state.</param>
     /// <param name="MaxConcurrentCalls">The maximum concurrent calls allowed in half-open state.</param>
+    /// <param name="ResetTimeout">The duration before an open circuit transitions to half-open.</param>
+    /// <param name="FailureThreshold">The number of consecutive failures required to open the circuit.</param>
     private sealed record BreakerState(
         CircuitState State,
         int FailureCount,
         int SuccessCount,
         DateTime? OpenedAt,
-        int MaxConcurrentCalls);
+        int MaxConcurrentCalls,
+        TimeSpan ResetTimeout,
+        int FailureThreshold);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CircuitBreakerActor"/> class and configures message handlers.
@@ -123,9 +127,9 @@ public sealed class CircuitBreakerActor : ReceiveActor
     private async Task HandleExecuteWithBreaker(ExecuteWithBreaker msg)
     {
         var breaker = _breakers.GetOrAdd(msg.OperationKey, _ =>
-            new BreakerState(CircuitState.Closed, 0, 0, null, msg.MaxConcurrentCalls));
+            new BreakerState(CircuitState.Closed, 0, 0, null, msg.MaxConcurrentCalls, msg.ResetTimeout, msg.FailureThreshold));
 
-        var currentState = GetEffectiveState(breaker, msg.ResetTimeout);
+        var currentState = GetEffectiveState(breaker, breaker.ResetTimeout);
 
         if (currentState == CircuitState.Open)
         {
@@ -144,12 +148,14 @@ public sealed class CircuitBreakerActor : ReceiveActor
         try
         {
             var result = await msg.Operation();
-            Self.Tell(new Success(msg.OperationKey));
+            // Update state synchronously before sending response
+            HandleSuccess(new Success(msg.OperationKey));
             Sender.Tell(result);
         }
         catch (Exception ex)
         {
-            Self.Tell(new Failure(msg.OperationKey, ex));
+            // Update state synchronously before sending response
+            HandleFailure(new Failure(msg.OperationKey, ex));
             Sender.Tell(new Status.Failure(ex));
         }
     }
@@ -162,16 +168,16 @@ public sealed class CircuitBreakerActor : ReceiveActor
     {
         _breakers.AddOrUpdate(
             msg.OperationKey,
-            key => new BreakerState(CircuitState.Closed, 0, 1, null, 1),
+            key => new BreakerState(CircuitState.Closed, 0, 1, null, 1, TimeSpan.FromSeconds(30), 5),
             (key, state) =>
             {
                 if (state.State == CircuitState.HalfOpen)
                 {
                     var newSuccessCount = state.SuccessCount + 1;
-                    return new BreakerState(CircuitState.Closed, 0, newSuccessCount, null, state.MaxConcurrentCalls);
+                    return new BreakerState(CircuitState.Closed, 0, newSuccessCount, null, state.MaxConcurrentCalls, state.ResetTimeout, state.FailureThreshold);
                 }
 
-                return new BreakerState(CircuitState.Closed, 0, state.SuccessCount, null, state.MaxConcurrentCalls);
+                return new BreakerState(CircuitState.Closed, 0, state.SuccessCount, null, state.MaxConcurrentCalls, state.ResetTimeout, state.FailureThreshold);
             });
 
         Log($"Circuit breaker for '{msg.OperationKey}' is now Closed");
@@ -185,17 +191,18 @@ public sealed class CircuitBreakerActor : ReceiveActor
     {
         _breakers.AddOrUpdate(
             msg.OperationKey,
-            key => new BreakerState(CircuitState.Open, 1, 0, DateTime.UtcNow, 1),
+            // This initial lambda should rarely be called since state is created in HandleExecuteWithBreaker
+            key => new BreakerState(CircuitState.Open, 1, 0, DateTime.UtcNow, 1, TimeSpan.FromSeconds(30), 5),
             (key, state) =>
             {
                 var newFailureCount = state.FailureCount + 1;
-                if (newFailureCount >= 5)
+                if (newFailureCount >= state.FailureThreshold)
                 {
                     Log($"Circuit breaker for '{msg.OperationKey}' opened after {newFailureCount} failures");
-                    return new BreakerState(CircuitState.Open, newFailureCount, 0, DateTime.UtcNow, state.MaxConcurrentCalls);
+                    return new BreakerState(CircuitState.Open, newFailureCount, 0, DateTime.UtcNow, state.MaxConcurrentCalls, state.ResetTimeout, state.FailureThreshold);
                 }
 
-                return new BreakerState(state.State, newFailureCount, state.SuccessCount, state.OpenedAt, state.MaxConcurrentCalls);
+                return new BreakerState(state.State, newFailureCount, state.SuccessCount, state.OpenedAt, state.MaxConcurrentCalls, state.ResetTimeout, state.FailureThreshold);
             });
     }
 
@@ -207,7 +214,7 @@ public sealed class CircuitBreakerActor : ReceiveActor
     {
         if (_breakers.TryGetValue(msg.OperationKey, out var state))
         {
-            var effectiveState = GetEffectiveState(state, TimeSpan.FromSeconds(30));
+            var effectiveState = GetEffectiveState(state, state.ResetTimeout);
             Sender.Tell(new StateResponse(msg.OperationKey, effectiveState, state.FailureCount));
         }
         else
