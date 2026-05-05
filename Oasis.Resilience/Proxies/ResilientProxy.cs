@@ -157,41 +157,16 @@ public class ResilientProxy<T> : DispatchProxy
             operation = WrapWithSupervision(operation, supervisionAttr);
         }
 
+        // Apply circuit breaker if specified
         if (breakerAttr is not null)
         {
-            var breakerResult = await CircuitBreakerActorRef.Ask<object>(
-                new CircuitBreakerActor.ExecuteWithBreaker(
-                    operationKey,
-                    operation,
-                    breakerAttr.FailureThreshold,
-                    TimeSpan.FromMilliseconds(breakerAttr.ResetTimeout),
-                    breakerAttr.MaxConcurrentCalls));
-
-            if (breakerResult is Status.Failure f)
-            {
-                if (f.Cause is CircuitBreakerActor.CircuitBreakerOpenException)
-                    throw f.Cause;
-
-                if (retryAttr is null)
-                    throw f.Cause;
-            }
-            else
-            {
-                return (TResult)breakerResult!;
-            }
+            return await ExecuteWithCircuitBreaker<TResult>(operationKey, operation, breakerAttr, retryAttr);
         }
 
+        // Apply retry if specified
         if (retryAttr is not null)
         {
-            var result = await ResilienceActorRef.Ask<object>(
-                new RetryActor.Execute(
-                    operation,
-                    retryAttr.MaxAttempts,
-                    TimeSpan.FromMilliseconds(retryAttr.InitialDelay)));
-
-            if (result is Status.Failure f) throw f.Cause;
-
-            return (TResult)result!;
+            return await ExecuteWithRetry<TResult>(operation, retryAttr);
         }
 
         // If only supervision is specified without retry/circuit breaker, execute with supervision
@@ -205,66 +180,150 @@ public class ResilientProxy<T> : DispatchProxy
     }
 
     /// <summary>
+    /// Executes an operation with circuit breaker protection.
+    /// </summary>
+    private async Task<TResult> ExecuteWithCircuitBreaker<TResult>(string operationKey, Func<Task<object>> operation, CircuitBreakerAttribute breakerAttr, RetryAttribute? retryAttr)
+    {
+        var breakerResult = await CircuitBreakerActorRef.Ask<object>(
+            new CircuitBreakerActor.ExecuteWithBreaker(
+                operationKey,
+                operation,
+                breakerAttr.FailureThreshold,
+                TimeSpan.FromMilliseconds(breakerAttr.ResetTimeout),
+                breakerAttr.MaxConcurrentCalls));
+
+        if (breakerResult is Status.Failure failure)
+        {
+            if (failure.Cause is CircuitBreakerActor.CircuitBreakerOpenException)
+                throw failure.Cause;
+
+            if (retryAttr is null)
+                throw failure.Cause;
+        }
+        else
+        {
+            return (TResult)breakerResult!;
+        }
+
+        // If we get here, circuit breaker failed but retry is configured
+        var result = await ResilienceActorRef.Ask<object>(
+            new RetryActor.Execute(
+                operation,
+                retryAttr!.MaxAttempts,
+                TimeSpan.FromMilliseconds(retryAttr.InitialDelay)));
+
+        if (result is Status.Failure retryFailure) throw retryFailure.Cause;
+        return (TResult)result!;
+    }
+
+    /// <summary>
+    /// Executes an operation with retry logic.
+    /// </summary>
+    private async Task<TResult> ExecuteWithRetry<TResult>(Func<Task<object>> operation, RetryAttribute retryAttr)
+    {
+        var result = await ResilienceActorRef.Ask<object>(
+            new RetryActor.Execute(
+                operation,
+                retryAttr.MaxAttempts,
+                TimeSpan.FromMilliseconds(retryAttr.InitialDelay)));
+
+        if (result is Status.Failure f) throw f.Cause;
+        return (TResult)result!;
+    }
+
+    /// <summary>
     /// Handles fan-out operations by distributing work across multiple actor workers.
     /// </summary>
-    /// <typeparam name="TResult">The type of the result.</typeparam>
-    /// <param name="method">The method being invoked.</param>
-    /// <param name="args">The arguments to the method.</param>
-    /// <param name="fanOut">The fan-out attribute configuration.</param>
-    /// <param name="supervision">The supervision attribute configuration.</param>
-    /// <returns>The aggregated result from all workers.</returns>
     private async Task<TResult> HandleFanOut<TResult>(MethodInfo method, object[] args, FanOutAttribute fanOut, SupervisionAttribute? supervision)
     {
-        // Use attribute values, falling back to options defaults
-        var maxWorkers = fanOut.MaxWorkers != 5 ? fanOut.MaxWorkers : (FanOutOptions?.DefaultMaxWorkers ?? 5);
+        // Extract fan-out parameters
+        var (maxWorkers, supervisionStrategy, backoffMinMs, backoffMaxMs, randomFactor) = ExtractFanOutParameters(fanOut, supervision);
 
+        // Create supervisor for worker actors
+        var supervisor = CreateWorkerSupervisor(fanOut.WorkerActorType, supervisionStrategy, backoffMinMs, backoffMaxMs, randomFactor);
+
+        // Find the split parameter
+        var (splitValues, otherArgs) = ExtractSplitParameters(method, args, fanOut.SplitParameterName);
+
+        // Fan-out: send work to multiple workers
+        var tasks = SendWorkToWorkers<TResult>(supervisor, fanOut.WorkerActorType, splitValues, otherArgs, method, maxWorkers);
+
+        // Fan-in: collect results
+        var results = await Task.WhenAll(tasks);
+        return AggregateResults<TResult>(results, fanOut.WorkerActorType);
+    }
+
+    /// <summary>
+    /// Extracts fan-out configuration parameters with fallback to options.
+    /// </summary>
+    private (int maxWorkers, SupervisionStrategy strategy, int minMs, int maxMs, double factor) ExtractFanOutParameters(
+        FanOutAttribute fanOut, SupervisionAttribute? supervision)
+    {
+        var maxWorkers = fanOut.MaxWorkers != 5 ? fanOut.MaxWorkers : (FanOutOptions?.DefaultMaxWorkers ?? 5);
         var supervisionStrategy = supervision?.Strategy ?? SupervisionOptions?.DefaultStrategy ?? SupervisionStrategy.RestartWithBackoff;
         var backoffMinMs = supervision?.BackoffMinMs ?? SupervisionOptions?.DefaultBackoffMinMs ?? 2000;
         var backoffMaxMs = supervision?.BackoffMaxMs ?? SupervisionOptions?.DefaultBackoffMaxMs ?? 30000;
         var randomFactor = supervision?.RandomFactor ?? SupervisionOptions?.DefaultRandomFactor ?? 0.2;
 
-        // Create BackoffSupervisor for worker actors if supervision is specified
-        Props workerProps = Props.Create(() => (ActorBase)Activator.CreateInstance(fanOut.WorkerActorType)!);
+        return (maxWorkers, supervisionStrategy, backoffMinMs, backoffMaxMs, randomFactor);
+    }
 
-        IActorRef supervisor;
-        if (supervisionStrategy == SupervisionStrategy.RestartWithBackoff)
+    /// <summary>
+    /// Creates a supervisor for worker actors based on supervision strategy.
+    /// </summary>
+    private IActorRef CreateWorkerSupervisor(Type workerActorType, SupervisionStrategy strategy, int minMs, int maxMs, double factor)
+    {
+        Props workerProps = Props.Create(() => (ActorBase)Activator.CreateInstance(workerActorType)!);
+
+        if (strategy == SupervisionStrategy.RestartWithBackoff)
         {
             var supervisorProps = BackoffSupervisor.Props(
                 childProps: workerProps,
-                childName: fanOut.WorkerActorType.Name,
-                minBackoff: TimeSpan.FromMilliseconds(backoffMinMs),
-                maxBackoff: TimeSpan.FromMilliseconds(backoffMaxMs),
-                randomFactor: randomFactor
+                childName: workerActorType.Name,
+                minBackoff: TimeSpan.FromMilliseconds(minMs),
+                maxBackoff: TimeSpan.FromMilliseconds(maxMs),
+                randomFactor: factor
             );
-            supervisor = ActorSystem.ActorOf(supervisorProps, $"{fanOut.WorkerActorType.Name}-supervisor");
+            return ActorSystem.ActorOf(supervisorProps, $"{workerActorType.Name}-supervisor");
         }
         else
         {
-            supervisor = ActorSystem.ActorOf(workerProps, $"{fanOut.WorkerActorType.Name}-pool");
+            return ActorSystem.ActorOf(workerProps, $"{workerActorType.Name}-pool");
         }
+    }
 
-        // Find the split parameter
+    /// <summary>
+    /// Extracts split parameter values and other arguments from method call.
+    /// </summary>
+    private (Array splitValues, object[] otherArgs) ExtractSplitParameters(MethodInfo method, object[] args, string splitParameterName)
+    {
         var parameters = method.GetParameters();
-        var splitParamIndex = Array.FindIndex(parameters, p => p.Name == fanOut.SplitParameterName);
+        var splitParamIndex = Array.FindIndex(parameters, p => p.Name == splitParameterName);
         if (splitParamIndex == -1)
-            throw new InvalidOperationException($"Split parameter '{fanOut.SplitParameterName}' not found.");
+            throw new InvalidOperationException($"Split parameter '{splitParameterName}' not found.");
 
         var splitValues = (Array)args[splitParamIndex];
         var otherArgs = args.Where((_, i) => i != splitParamIndex).ToArray();
 
-        // Fan-out: send work to multiple workers
+        return (splitValues, otherArgs);
+    }
+
+    /// <summary>
+    /// Sends work to multiple worker actors and returns tasks for collecting results.
+    /// </summary>
+    private List<Task<object>> SendWorkToWorkers<TResult>(IActorRef supervisor, Type workerActorType, Array splitValues, object[] otherArgs, MethodInfo method, int maxWorkers)
+    {
         var tasks = new List<Task<object>>();
+        var parameters = method.GetParameters();
+
         for (int i = 0; i < splitValues.Length && i < maxWorkers; i++)
         {
             var splitValue = splitValues.GetValue(i)!;
-            var message = CreateWorkerMessage(fanOut.WorkerActorType, splitValue, parameters, otherArgs);
-
+            var message = CreateWorkerMessage(workerActorType, splitValue, parameters, otherArgs);
             tasks.Add(supervisor.Ask<object>(message, TimeSpan.FromSeconds(30)));
         }
 
-        // Fan-in: collect results
-        var results = await Task.WhenAll(tasks);
-        return AggregateResults<TResult>(results, fanOut.WorkerActorType);
+        return tasks;
     }
 
     /// <summary>
