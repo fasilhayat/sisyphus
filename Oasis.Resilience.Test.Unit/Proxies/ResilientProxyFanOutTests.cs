@@ -1,7 +1,5 @@
 namespace Oasis.Resilience.Test.Unit.Proxies;
 
-using Microsoft.Extensions.DependencyInjection;
-using Oasis.Resilience;
 using Oasis.Resilience.Attributes;
 using Oasis.Resilience.Proxies;
 using System.Reflection;
@@ -83,7 +81,7 @@ public class ResilientProxyFanOutTests
     {
         // Arrange
         var proxy = DispatchProxy.Create<IFanOutService, ResilientProxy<IFanOutService>>();
-        var p = proxy as ResilientProxy<IFanOutService> ?? 
+        var p = proxy as ResilientProxy<IFanOutService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         // Act - Access the attribute cache (indirectly through reflection)
@@ -119,7 +117,7 @@ public class ResilientProxyFanOutTests
     {
         // Arrange
         var proxy = DispatchProxy.Create<IFanOutService, ResilientProxy<IFanOutService>>();
-        var p = proxy as ResilientProxy<IFanOutService> ?? 
+        var p = proxy as ResilientProxy<IFanOutService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         // Act - Should not throw
@@ -143,7 +141,7 @@ public class ResilientProxyFanOutTests
     {
         // Arrange
         var proxy = DispatchProxy.Create<IFanOutService, ResilientProxy<IFanOutService>>();
-        var p = proxy as ResilientProxy<IFanOutService> ?? 
+        var p = proxy as ResilientProxy<IFanOutService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         // Act - Should not throw

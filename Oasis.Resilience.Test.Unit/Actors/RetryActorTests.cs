@@ -111,7 +111,7 @@ public class RetryActorTests : TestKit
         // Assert - Should succeed after retries
         var response = await ExpectMsgAsync<object>();
         Assert.Equal("success", response);
-        
+
         // Verify exponential backoff (second attempt should be delayed more than first)
         Assert.True(attemptTimes.Count >= 2);
     }

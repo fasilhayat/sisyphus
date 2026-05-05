@@ -22,7 +22,7 @@ public class ResilientProxyEdgeCaseTests : ProxyTestBase
         var _retryActor = _actorSystem.ActorOf(Props.Create(() => new RetryActor(new RetryOptions())), "retry");
 
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         decorated = new TestService();
@@ -79,20 +79,20 @@ public class ResilientProxyEdgeCaseTests : ProxyTestBase
         // Arrange
         var _actorSystem = CreateActorSystem();
         var proxy = DispatchProxy.Create<ITestService2, ResilientProxy<ITestService2>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService2> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService2> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         var supervisionAttr = new SupervisionAttribute(SupervisionStrategy.Restart);
-        
+
         // Use reflection to call WrapWithSupervision
-        var method = typeof(ResilientProxy<ITestService2>).GetMethod("WrapWithSupervision", 
+        var method = typeof(ResilientProxy<ITestService2>).GetMethod("WrapWithSupervision",
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         // Act
-        var wrappedOp = method!.Invoke(resilientProxy, 
-            new object[] { new Func<Task<object>>(() => Task.FromResult<object>("test")), supervisionAttr }) 
+        var wrappedOp = method!.Invoke(resilientProxy,
+            new object[] { new Func<Task<object>>(() => Task.FromResult<object>("test")), supervisionAttr })
             as Func<Task<object>>;
-        
+
         // Assert
         Assert.NotNull(wrappedOp);
     }

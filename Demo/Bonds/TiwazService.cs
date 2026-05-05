@@ -12,7 +12,7 @@ public class TiwazService : ITiwazService
     /// </summary>
     private static readonly HttpClient Client = new()
     {
-        BaseAddress = new Uri( "https://tiwaz.hayatnet.local")
+        BaseAddress = new Uri("https://tiwaz.hayatnet.local")
     };
 
     /// <summary>
@@ -23,7 +23,7 @@ public class TiwazService : ITiwazService
     [Retry(maxAttempts: 5, initialDelay: 2)]
     public async Task<string> GetBondsAsync()
     {
-        var req =  new HttpRequestMessage(HttpMethod.Get, "/v1/bonds");
+        var req = new HttpRequestMessage(HttpMethod.Get, "/v1/bonds");
         req.Headers.Add("accept", "*/*");
         req.Headers.Add("X-API-KEY", "Skyw@lker!");
 

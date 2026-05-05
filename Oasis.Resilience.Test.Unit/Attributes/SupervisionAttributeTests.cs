@@ -13,7 +13,7 @@ public class SupervisionAttributeTests
     {
         // Arrange
         var attr = new SupervisionAttribute();
-        
+
         // Assert
         Assert.Equal(SupervisionStrategy.RestartWithBackoff, attr.Strategy);
         Assert.Equal(5, attr.MaxRetries);
@@ -32,7 +32,7 @@ public class SupervisionAttributeTests
             backoffMinMs: 1000,
             backoffMaxMs: 60000,
             randomFactor: 0.5);
-        
+
         // Assert
         Assert.Equal(SupervisionStrategy.Stop, attr.Strategy);
         Assert.Equal(10, attr.MaxRetries);
@@ -76,16 +76,16 @@ public class SupervisionAttributeTests
         // Arrange & Act & Assert
         var restart = new SupervisionAttribute(strategy: SupervisionStrategy.Restart);
         Assert.Equal(SupervisionStrategy.Restart, restart.Strategy);
-        
+
         var stop = new SupervisionAttribute(strategy: SupervisionStrategy.Stop);
         Assert.Equal(SupervisionStrategy.Stop, stop.Strategy);
-        
+
         var escalate = new SupervisionAttribute(strategy: SupervisionStrategy.Escalate);
         Assert.Equal(SupervisionStrategy.Escalate, escalate.Strategy);
-        
+
         var resume = new SupervisionAttribute(strategy: SupervisionStrategy.Resume);
         Assert.Equal(SupervisionStrategy.Resume, resume.Strategy);
-        
+
         var backoff = new SupervisionAttribute(strategy: SupervisionStrategy.RestartWithBackoff);
         Assert.Equal(SupervisionStrategy.RestartWithBackoff, backoff.Strategy);
     }

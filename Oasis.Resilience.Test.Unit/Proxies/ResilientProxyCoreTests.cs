@@ -1,6 +1,5 @@
 namespace Oasis.Resilience.Test.Unit.Proxies;
 
-using Akka.Actor;
 using Oasis.Resilience.Attributes;
 using Oasis.Resilience.Proxies;
 using System.Collections.Concurrent;
@@ -28,13 +27,13 @@ public class ResilientProxyCoreTests
         ResilientProxy<ITestService>.RegisterMessageFactory(factory);
 
         // Use reflection to verify the factory was set
-        var field = typeof(ResilientProxy<ITestService>).GetField("_messageFactory", 
+        var field = typeof(ResilientProxy<ITestService>).GetField("_messageFactory",
             BindingFlags.NonPublic | BindingFlags.Static);
         var storedFactory = field?.GetValue(null) as Delegate;
 
         // Assert
         Assert.NotNull(storedFactory);
-        
+
         // Cleanup
         ResilientProxy<ITestService>.RegisterMessageFactory(null!);
     }
@@ -52,13 +51,13 @@ public class ResilientProxyCoreTests
         ResilientProxy<ITestService>.RegisterResultAggregator(aggregator);
 
         // Use reflection to verify the aggregator was set
-        var field = typeof(ResilientProxy<ITestService>).GetField("_resultAggregator", 
+        var field = typeof(ResilientProxy<ITestService>).GetField("_resultAggregator",
             BindingFlags.NonPublic | BindingFlags.Static);
         var storedAggregator = field?.GetValue(null) as Delegate;
 
         // Assert
         Assert.NotNull(storedAggregator);
-        
+
         // Cleanup
         ResilientProxy<ITestService>.RegisterResultAggregator(null!);
     }
@@ -71,20 +70,20 @@ public class ResilientProxyCoreTests
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
-        
+
         // Ensure no factory is registered
         ResilientProxy<ITestService>.RegisterMessageFactory(null!);
 
         // Use reflection to call CreateWorkerMessage
-        var method = typeof(ResilientProxy<ITestService>).GetMethod("CreateWorkerMessage", 
+        var method = typeof(ResilientProxy<ITestService>).GetMethod("CreateWorkerMessage",
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         // Act & Assert
         var ex = Assert.Throws<TargetInvocationException>(() =>
             method!.Invoke(resilientProxy, [typeof(object), new object(), Array.Empty<ParameterInfo>(), Array.Empty<object>()]));
-        
+
         Assert.IsType<InvalidOperationException>(ex.InnerException);
         Assert.Contains("No message factory registered", ex.InnerException.Message);
     }
@@ -97,20 +96,20 @@ public class ResilientProxyCoreTests
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
-        
+
         // Ensure no aggregator is registered
         ResilientProxy<ITestService>.RegisterResultAggregator(null!);
 
         // Use reflection to call AggregateResults
-        var method = typeof(ResilientProxy<ITestService>).GetMethod("AggregateResults", 
+        var method = typeof(ResilientProxy<ITestService>).GetMethod("AggregateResults",
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         // Act & Assert
         var ex = Assert.Throws<TargetInvocationException>(() =>
             method!.MakeGenericMethod(typeof(string)).Invoke(resilientProxy, [Array.Empty<object>(), typeof(object)]));
-        
+
         Assert.IsType<InvalidOperationException>(ex.InnerException);
         Assert.Contains("No result aggregator registered", ex.InnerException.Message);
     }
@@ -143,22 +142,22 @@ public class ResilientProxyCoreTests
     {
         // Arrange
         var proxy = DispatchProxy.Create<INonGenericTaskService, ResilientProxy<INonGenericTaskService>>();
-        var resilientProxy = proxy as ResilientProxy<INonGenericTaskService> ?? 
+        var resilientProxy = proxy as ResilientProxy<INonGenericTaskService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         resilientProxy.DecoratedInstance = new NonGenericTaskService();
 
         // Get the method that returns non-generic Task
         var method = typeof(INonGenericTaskService).GetMethod(nameof(INonGenericTaskService.DoWork));
-        
+
         // Use reflection to call InvokeResilient
-        var invokeMethod = typeof(ResilientProxy<INonGenericTaskService>).GetMethod("InvokeResilient", 
+        var invokeMethod = typeof(ResilientProxy<INonGenericTaskService>).GetMethod("InvokeResilient",
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         // Act & Assert
         var ex = Assert.Throws<TargetInvocationException>(() =>
             invokeMethod!.Invoke(resilientProxy, [method!, Array.Empty<object>(), null, null, null, null]));
-        
+
         // The exception should be InvalidOperationException for non-generic Task
         Assert.IsType<InvalidOperationException>(ex.InnerException);
         Assert.Contains("Only Task<T> supported", ex.InnerException.Message);
@@ -180,16 +179,16 @@ public class ResilientProxyCoreTests
     {
         // Arrange
         var method = typeof(ITestService).GetMethod(nameof(ITestService.GetDataAsync));
-        
+
         // Clear cache first using reflection
-        var cacheField = typeof(ResilientProxy<ITestService>).GetField("RetryAttributeCache", 
+        var cacheField = typeof(ResilientProxy<ITestService>).GetField("RetryAttributeCache",
             BindingFlags.NonPublic | BindingFlags.Static);
         var cache = cacheField?.GetValue(null) as ConcurrentDictionary<MethodInfo, RetryAttribute?>;
         cache?.TryRemove(method!, out _);
 
         // Act - Call to trigger caching
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
         resilientProxy.DecoratedInstance = new TestService();
 
@@ -209,17 +208,17 @@ public class ResilientProxyCoreTests
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         // Use reflection to call Invoke with null method
-        var invokeMethod = typeof(DispatchProxy).GetMethod("Invoke", 
+        var invokeMethod = typeof(DispatchProxy).GetMethod("Invoke",
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         // Act & Assert
         var ex = Assert.Throws<TargetInvocationException>(() =>
             invokeMethod!.Invoke(resilientProxy, [null, Array.Empty<object>()]));
-        
+
         Assert.IsType<ArgumentNullException>(ex.InnerException);
     }
 
@@ -231,19 +230,19 @@ public class ResilientProxyCoreTests
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         var method = typeof(ITestService).GetMethod(nameof(ITestService.SimpleMethod));
-        
+
         // Use reflection to call Invoke with null args
-        var invokeMethod = typeof(DispatchProxy).GetMethod("Invoke", 
+        var invokeMethod = typeof(DispatchProxy).GetMethod("Invoke",
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         // Act & Assert
         var ex = Assert.Throws<TargetInvocationException>(() =>
             invokeMethod!.Invoke(resilientProxy, [method, null]));
-        
+
         Assert.IsType<ArgumentNullException>(ex.InnerException);
     }
 
@@ -255,23 +254,23 @@ public class ResilientProxyCoreTests
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         // Create a method that doesn't exist on the decorated instance
         var method = typeof(ResilientProxyCoreTests).GetMethod(nameof(DummyMethod));
-        
+
         // Set a decorated instance that doesn't have this method
         resilientProxy.DecoratedInstance = new TestService();
 
         // Use reflection to call Invoke
-        var invokeMethod = typeof(DispatchProxy).GetMethod("Invoke", 
+        var invokeMethod = typeof(DispatchProxy).GetMethod("Invoke",
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         // Act & Assert
         var ex = Assert.Throws<TargetInvocationException>(() =>
             invokeMethod!.Invoke(resilientProxy, [method, Array.Empty<object>()]));
-        
+
         // The actual exception might be ArgumentNullException or InvalidOperationException
         // depending on how DispatchProxy handles the method lookup
         Assert.True(ex.InnerException is InvalidOperationException || ex.InnerException is ArgumentNullException);
@@ -290,21 +289,21 @@ public class ResilientProxyCoreTests
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         resilientProxy.DecoratedInstance = default!;
 
         var method = typeof(ITestService).GetMethod(nameof(ITestService.SimpleMethod));
-        
+
         // Use reflection to call Invoke
-        var invokeMethod = typeof(DispatchProxy).GetMethod("Invoke", 
+        var invokeMethod = typeof(DispatchProxy).GetMethod("Invoke",
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         // Act & Assert
         var ex = Assert.Throws<TargetInvocationException>(() =>
             invokeMethod!.Invoke(resilientProxy, [method, Array.Empty<object>()]));
-        
+
         // Should throw NullReferenceException when trying to access DecoratedInstance.GetType()
         Assert.IsType<NullReferenceException>(ex.InnerException);
     }

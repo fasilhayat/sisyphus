@@ -13,7 +13,7 @@ public class CircuitBreakerAttributeTests
     {
         // Arrange
         var attr = new CircuitBreakerAttribute();
-        
+
         // Assert
         Assert.Equal(5, attr.FailureThreshold);
         Assert.Equal(30000, attr.ResetTimeout);
@@ -28,7 +28,7 @@ public class CircuitBreakerAttributeTests
             failureThreshold: 3,
             resetTimeout: 10000,
             maxConcurrentCalls: 2);
-        
+
         // Assert
         Assert.Equal(3, attr.FailureThreshold);
         Assert.Equal(10000, attr.ResetTimeout);
@@ -63,7 +63,7 @@ public class CircuitBreakerAttributeTests
     {
         // Arrange & Act
         var attr = new CircuitBreakerAttribute(failureThreshold: 1);
-        
+
         // Assert
         Assert.Equal(1, attr.FailureThreshold);
     }
@@ -73,7 +73,7 @@ public class CircuitBreakerAttributeTests
     {
         // Arrange & Act
         var attr = new CircuitBreakerAttribute(resetTimeout: 0);
-        
+
         // Assert
         Assert.Equal(0, attr.ResetTimeout);
     }

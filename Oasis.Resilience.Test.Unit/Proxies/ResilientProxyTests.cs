@@ -1,7 +1,5 @@
 namespace Oasis.Resilience.Test.Unit.Proxies;
 
-using Akka.Actor;
-using Akka.Configuration;
 using Oasis.Resilience;
 using Oasis.Resilience.Attributes;
 using Oasis.Resilience.Proxies;
@@ -21,7 +19,7 @@ public class ResilientProxyTests : ProxyTestBase
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         var actorSystem = CreateActorSystem("test-system");
@@ -37,7 +35,7 @@ public class ResilientProxyTests : ProxyTestBase
         Assert.Equal(actorSystem, resilientProxy.ActorSystem);
         Assert.Equal(supervisionOptions, resilientProxy.SupervisionOptions);
         Assert.Equal(fanOutOptions, resilientProxy.FanOutOptions);
-        
+
         await actorSystem.Terminate();
     }
 
@@ -49,7 +47,7 @@ public class ResilientProxyTests : ProxyTestBase
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
         var decorated = new TestService();
 
@@ -68,7 +66,7 @@ public class ResilientProxyTests : ProxyTestBase
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
         var service = new TestService();
         resilientProxy.DecoratedInstance = service;
@@ -106,7 +104,7 @@ public class ResilientProxyTests : ProxyTestBase
         // Arrange
         var method = typeof(ITestService).GetMethod(nameof(ITestService.SupervisedMethod));
         var attr = method?.GetCustomAttribute<SupervisionAttribute>();
-        
+
         // Assert
         Assert.NotNull(attr);
         Assert.Equal(SupervisionStrategy.Restart, attr!.Strategy);
@@ -120,7 +118,7 @@ public class ResilientProxyTests : ProxyTestBase
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         // Act & Assert
@@ -135,7 +133,7 @@ public class ResilientProxyTests : ProxyTestBase
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
         var service = new TestService();
         service.CallCount = 2; // Skip first 2 failures
@@ -156,7 +154,7 @@ public class ResilientProxyTests : ProxyTestBase
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
         var decorated = new TestService();
         resilientProxy.DecoratedInstance = decorated;
@@ -207,12 +205,12 @@ public class ResilientProxyTests : ProxyTestBase
         /// Gets a value indicating whether SimpleMethod was called.
         /// </summary>
         public bool SimpleMethodCalled { get; private set; }
-        
+
         /// <summary>
         /// Gets the number of times SimpleMethod was called.
         /// </summary>
         public int SimpleMethodCallCount { get; private set; }
-        
+
         /// <summary>
         /// Gets or sets the number of times GetDataAsync was called.
         /// </summary>

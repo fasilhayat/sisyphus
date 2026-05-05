@@ -11,7 +11,7 @@ using var serviceProvider = services.BuildServiceProvider();
 var service = serviceProvider.GetRequiredService<ITiwazService>();
 
 Console.ForegroundColor = ConsoleColor.Cyan;
-Console.WriteLine( "Calling service using AOP resilience...");
+Console.WriteLine("Calling service using AOP resilience...");
 Console.WriteLine("If the endpoint is unavailable, retries will be shown below.");
 Console.ResetColor();
 

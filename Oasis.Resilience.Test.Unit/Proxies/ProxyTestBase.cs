@@ -24,7 +24,7 @@ public abstract class ProxyTestBase : IDisposable
             akka.coordinated-shutdown.exit-clr = off
             akka.coordinated-shutdown.log-level = ERROR
         ");
-        
+
         var system = ActorSystem.Create(name, config);
         _actorSystems.Add(system);
         return system;

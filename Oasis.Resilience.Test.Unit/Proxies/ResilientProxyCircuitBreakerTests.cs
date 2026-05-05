@@ -24,12 +24,12 @@ public class ResilientProxyCircuitBreakerTests : ProxyTestBase
         _actorSystem = CreateActorSystem();
 
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         resilientProxy.DecoratedInstance = new TestService();
         resilientProxy.FanOutOptions = new FanOutOptions();
-        
+
         return proxy!;
     }
 

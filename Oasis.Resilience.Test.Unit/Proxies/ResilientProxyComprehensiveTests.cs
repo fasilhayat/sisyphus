@@ -24,7 +24,7 @@ public class ResilientProxyComprehensiveTests : ProxyTestBase
             Props.Create(() => new CircuitBreakerActor(new RetryOptions())), "circuit-breaker");
 
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         decorated = new TestService();
@@ -81,7 +81,7 @@ public class ResilientProxyComprehensiveTests : ProxyTestBase
         // Arrange
         var _actorSystem = CreateActorSystem();
         var proxy = DispatchProxy.Create<ITestService2, ResilientProxy<ITestService2>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService2> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService2> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         resilientProxy.DecoratedInstance = new TestService2();
@@ -104,25 +104,25 @@ public class ResilientProxyComprehensiveTests : ProxyTestBase
         // Arrange
         var _actorSystem = CreateActorSystem();
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         resilientProxy.DecoratedInstance = new TestService();
         resilientProxy.ActorSystem = _actorSystem;
 
-        var method = typeof(ResilientProxyComprehensiveTests).GetMethod(nameof(NonGenericTask), 
+        var method = typeof(ResilientProxyComprehensiveTests).GetMethod(nameof(NonGenericTask),
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         if (method is null)
             throw new InvalidOperationException("NonGenericTask method not found");
-        
+
         // Act & Assert - Use reflection to call InvokeResilient
-        var invokeMethod = typeof(ResilientProxy<ITestService>).GetMethod("InvokeResilient", 
+        var invokeMethod = typeof(ResilientProxy<ITestService>).GetMethod("InvokeResilient",
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         var ex = Assert.Throws<TargetInvocationException>(() =>
             invokeMethod!.Invoke(resilientProxy, new object[] { method, Array.Empty<object>(), null!, null!, null!, null! }));
-        
+
         Assert.IsType<InvalidOperationException>(ex.InnerException);
         Assert.Contains("Only Task<T> supported", ex.InnerException.Message);
     }

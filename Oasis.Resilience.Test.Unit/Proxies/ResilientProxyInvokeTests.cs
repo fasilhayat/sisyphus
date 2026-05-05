@@ -7,7 +7,6 @@ using Oasis.Resilience.Actors;
 using Oasis.Resilience.Attributes;
 using Oasis.Resilience.Proxies;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using Xunit;
 
 /// <summary>
@@ -34,7 +33,7 @@ public class ResilientProxyInvokeTests : ProxyTestBase
             Props.Create(() => new CircuitBreakerActor(new RetryOptions())), "circuit-breaker");
 
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         decorated = new TestService();
@@ -76,9 +75,9 @@ public class ResilientProxyInvokeTests : ProxyTestBase
     {
         // Arrange
         _actorSystem = ActorSystem.Create($"test-system-{Guid.NewGuid()}");
-        
+
         var proxy = DispatchProxy.Create<ITestService2, ResilientProxy<ITestService2>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService2> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService2> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         var decorated = new TestService2();
@@ -100,21 +99,21 @@ public class ResilientProxyInvokeTests : ProxyTestBase
     {
         // Arrange
         var proxy = DispatchProxy.Create<INonGenericService, ResilientProxy<INonGenericService>>();
-        var resilientProxy = proxy as ResilientProxy<INonGenericService> ?? 
+        var resilientProxy = proxy as ResilientProxy<INonGenericService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         resilientProxy.DecoratedInstance = new NonGenericService();
 
         // Use reflection to call InvokeResilient directly (which calls InvokeGeneric internally)
-        var method = typeof(ResilientProxy<INonGenericService>).GetMethod("InvokeResilient", 
+        var method = typeof(ResilientProxy<INonGenericService>).GetMethod("InvokeResilient",
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         var doWorkMethod = typeof(INonGenericService).GetMethod(nameof(INonGenericService.DoWork));
-        
+
         // Act & Assert
         var ex = Assert.Throws<TargetInvocationException>(() =>
             method!.Invoke(resilientProxy, [doWorkMethod!, Array.Empty<object>(), null, null, null, null]));
-        
+
         Assert.IsType<InvalidOperationException>(ex.InnerException);
         Assert.Contains("Only Task<T> supported", ex.InnerException.Message);
     }
@@ -127,25 +126,25 @@ public class ResilientProxyInvokeTests : ProxyTestBase
     {
         // Arrange
         _actorSystem = CreateActorSystem($"test-system-{Guid.NewGuid()}");
-        
+
         var proxy = DispatchProxy.Create<ITestService2, ResilientProxy<ITestService2>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService2> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService2> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         // Use reflection to call WrapWithSupervision
-        var method = typeof(ResilientProxy<ITestService2>).GetMethod("WrapWithSupervision", 
+        var method = typeof(ResilientProxy<ITestService2>).GetMethod("WrapWithSupervision",
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         var supervisionAttr = new SupervisionAttribute(SupervisionStrategy.Restart);
-        
+
         // Act
-        var wrappedOp = method!.Invoke(resilientProxy, 
-            [new Func<Task<object>>(() => Task.FromResult<object>("test")), supervisionAttr]) 
+        var wrappedOp = method!.Invoke(resilientProxy,
+            [new Func<Task<object>>(() => Task.FromResult<object>("test")), supervisionAttr])
             as Func<Task<object>>;
-        
+
         Assert.NotNull(wrappedOp);
         var result = await wrappedOp();
-        
+
         // Assert
         Assert.Equal("test", result);
     }

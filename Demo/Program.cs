@@ -66,7 +66,7 @@ try
     {
         await Task.WhenAll(danishTask, norwegianTask, bondTask);
     }
-    catch(Exception ex)
+    catch (Exception ex)
     {
         Console.ForegroundColor = ConsoleColor.DarkYellow;
         Console.WriteLine($"Task.WhenAll observed one or more failures and threw error: '{ex.Message}'.\nContinuing so each task can be inspected separately.");
@@ -179,7 +179,7 @@ try
     var years = new[] { 2022, 2023, 2024, 2025 };
     var fanOutTask = holidayService.GetHolidaysForYearsAsync(years, "norway");
     await SafeAwaitDict(fanOutTask, "Fan-Out Holidays");
-    
+
     if (fanOutTask.IsCompletedSuccessfully)
     {
         Console.WriteLine("Fan-Out succeeded:");

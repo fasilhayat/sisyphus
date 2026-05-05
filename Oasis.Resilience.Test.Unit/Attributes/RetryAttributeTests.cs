@@ -13,7 +13,7 @@ public class RetryAttributeTests
     {
         // Arrange
         var attr = new RetryAttribute();
-        
+
         // Assert
         Assert.Equal(5, attr.MaxAttempts);
         Assert.Equal(2000, attr.InitialDelay);
@@ -24,7 +24,7 @@ public class RetryAttributeTests
     {
         // Arrange
         var attr = new RetryAttribute(maxAttempts: 3, initialDelay: 500);
-        
+
         // Assert
         Assert.Equal(3, attr.MaxAttempts);
         Assert.Equal(500, attr.InitialDelay);
@@ -50,7 +50,7 @@ public class RetryAttributeTests
     {
         // Arrange & Act
         var attr = new RetryAttribute(maxAttempts: 1);
-        
+
         // Assert
         Assert.Equal(1, attr.MaxAttempts);
     }
@@ -60,7 +60,7 @@ public class RetryAttributeTests
     {
         // Arrange & Act
         var attr = new RetryAttribute(initialDelay: 0);
-        
+
         // Assert
         Assert.Equal(0, attr.InitialDelay);
     }

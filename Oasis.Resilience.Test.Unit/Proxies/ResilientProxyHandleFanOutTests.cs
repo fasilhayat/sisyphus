@@ -19,7 +19,7 @@ public class ResilientProxyHandleFanOutTests : ProxyTestBase
     {
         var _actorSystem = CreateActorSystem();
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         resilientProxy.ActorSystem = _actorSystem;
@@ -40,14 +40,14 @@ public class ResilientProxyHandleFanOutTests : ProxyTestBase
 
         var method = typeof(ITestService).GetMethod(nameof(ITestService.ProcessData));
         var fanOutAttr = new FanOutAttribute(typeof(TestWorkerActor), "NonExistentParam", 2);
-        
+
         // Use reflection to call InvokeResilient with fan-out attribute
-        var invokeMethod = typeof(ResilientProxy<ITestService>).GetMethod("InvokeResilient", 
+        var invokeMethod = typeof(ResilientProxy<ITestService>).GetMethod("InvokeResilient",
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         // Act
         var task = (Task)invokeMethod!.Invoke(resilientProxy, new object[] { method!, new object[] { new int[] { 1, 2, 3 } }, null!, null!, null!, fanOutAttr })!;
-        
+
         // Assert
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => task);
         Assert.Contains("not found", ex.Message);
@@ -61,10 +61,10 @@ public class ResilientProxyHandleFanOutTests : ProxyTestBase
     {
         // Arrange
         var method = typeof(ITestService).GetMethod(nameof(ITestService.ProcessData));
-        
+
         // Act
         var fanOutAttr = method?.GetCustomAttribute<FanOutAttribute>();
-        
+
         // Assert
         Assert.NotNull(fanOutAttr);
         Assert.Equal(typeof(TestWorkerActor), fanOutAttr.WorkerActorType);
@@ -81,7 +81,7 @@ public class ResilientProxyHandleFanOutTests : ProxyTestBase
         // Arrange
         bool factoryCalled = false;
         bool aggregatorCalled = false;
-        
+
         ResilientProxy<ITestService>.RegisterMessageFactory((workerType, splitValue, parameters, otherArgs) =>
         {
             factoryCalled = true;
@@ -97,7 +97,7 @@ public class ResilientProxyHandleFanOutTests : ProxyTestBase
         // Assert
         Assert.False(factoryCalled); // Not called yet
         Assert.False(aggregatorCalled); // Not called yet
-        
+
         // Cleanup
         ResilientProxy<ITestService>.RegisterMessageFactory(null!);
         ResilientProxy<ITestService>.RegisterResultAggregator(null!);

@@ -145,7 +145,7 @@ public class ResilientProxy<T> : DispatchProxy
             var result = implementedMethod.Invoke(DecoratedInstance, args);
             if (result is null)
                 throw new InvalidOperationException("Method invocation returned null");
-            
+
             var task = (Task<TResult>)result;
             var taskResult = await task;
             return taskResult!;
@@ -171,7 +171,7 @@ public class ResilientProxy<T> : DispatchProxy
             {
                 if (f.Cause is CircuitBreakerActor.CircuitBreakerOpenException)
                     throw f.Cause;
-                
+
                 if (retryAttr is null)
                     throw f.Cause;
             }
@@ -217,7 +217,7 @@ public class ResilientProxy<T> : DispatchProxy
     {
         // Use attribute values, falling back to options defaults
         var maxWorkers = fanOut.MaxWorkers != 5 ? fanOut.MaxWorkers : (FanOutOptions?.DefaultMaxWorkers ?? 5);
-        
+
         var supervisionStrategy = supervision?.Strategy ?? SupervisionOptions?.DefaultStrategy ?? SupervisionStrategy.RestartWithBackoff;
         var backoffMinMs = supervision?.BackoffMinMs ?? SupervisionOptions?.DefaultBackoffMinMs ?? 2000;
         var backoffMaxMs = supervision?.BackoffMaxMs ?? SupervisionOptions?.DefaultBackoffMaxMs ?? 30000;
@@ -225,7 +225,7 @@ public class ResilientProxy<T> : DispatchProxy
 
         // Create BackoffSupervisor for worker actors if supervision is specified
         Props workerProps = Props.Create(() => (ActorBase)Activator.CreateInstance(fanOut.WorkerActorType)!);
-        
+
         IActorRef supervisor;
         if (supervisionStrategy == SupervisionStrategy.RestartWithBackoff)
         {
@@ -258,7 +258,7 @@ public class ResilientProxy<T> : DispatchProxy
         {
             var splitValue = splitValues.GetValue(i)!;
             var message = CreateWorkerMessage(fanOut.WorkerActorType, splitValue, parameters, otherArgs);
-            
+
             tasks.Add(supervisor.Ask<object>(message, TimeSpan.FromSeconds(30)));
         }
 

@@ -8,21 +8,21 @@ public class HolidayService : IHolidayService
     {
         BaseAddress = new Uri("https://holidays.api")
     };
-    
+
     public async Task<string> GetNorwegianHolidaysAsync(int year)
     {
         var response = await Client.GetAsync($"/norway/{year}");
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
-    
+
     public async Task<string> GetDanishHolidaysAsync(int year)
     {
         var response = await Client.GetAsync($"/denmark/{year}");
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
-    
+
     // AOP interceptor won't call this directly for FanOut
     // Instead, it uses this as a template for worker actors
     public async Task<Dictionary<int, string>> GetHolidaysForYearsAsync(int[] years, string country)
