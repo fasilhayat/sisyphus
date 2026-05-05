@@ -1,13 +1,10 @@
 namespace Oasis.Resilience.Test.Unit.Proxies;
 
 using Akka.Actor;
-using Akka.Configuration;
 using Oasis.Resilience;
-using Oasis.Resilience.Actors;
 using Oasis.Resilience.Attributes;
 using Oasis.Resilience.Proxies;
 using System.Reflection;
-using Xunit;
 
 /// <summary>
 /// Tests for ResilientProxy with circuit breaker attribute.

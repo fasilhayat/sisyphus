@@ -2,7 +2,6 @@ namespace Oasis.Resilience.Test.Unit.Runtime;
 
 using Microsoft.Extensions.DependencyInjection;
 using Oasis.Resilience;
-using Oasis.Resilience.Attributes;
 using Xunit;
 
 /// <summary>

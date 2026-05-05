@@ -2,10 +2,7 @@ namespace Oasis.Resilience.Test.Unit.Extensions;
 
 using Microsoft.Extensions.DependencyInjection;
 using Oasis.Resilience;
-using Oasis.Resilience.Attributes;
-using Oasis.Resilience.Proxies;
 using Xunit;
-using Akka.Actor;
 
 /// <summary>
 /// Unit tests for <see cref="ResilienceRegistration"/>.
