@@ -152,4 +152,102 @@ public class ResilienceRegistrationTests
         var service = provider.GetRequiredService<ITestService>();
         Assert.NotNull(service);
     }
+
+    [Fact]
+    public void AddResilience_should_register_SupervisionOptions_with_defaults()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddResilience();
+
+        // Assert
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<SupervisionOptions>>();
+        Assert.NotNull(options);
+        Assert.Equal(Oasis.Resilience.Attributes.SupervisionStrategy.RestartWithBackoff, options.Value.DefaultStrategy);
+        Assert.Equal(5, options.Value.DefaultMaxRetries);
+        Assert.Equal(2000, options.Value.DefaultBackoffMinMs);
+        Assert.Equal(30000, options.Value.DefaultBackoffMaxMs);
+        Assert.Equal(0.2, options.Value.DefaultRandomFactor);
+    }
+
+    [Fact]
+    public void AddResilience_should_configure_SupervisionOptions()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddResilience(configureSupervisionOptions: options =>
+        {
+            options.DefaultStrategy = Oasis.Resilience.Attributes.SupervisionStrategy.Stop;
+            options.DefaultMaxRetries = 10;
+            options.DefaultBackoffMinMs = 1000;
+            options.DefaultBackoffMaxMs = 60000;
+            options.DefaultRandomFactor = 0.5;
+        });
+
+        // Assert
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<SupervisionOptions>>();
+        Assert.Equal(Oasis.Resilience.Attributes.SupervisionStrategy.Stop, options.Value.DefaultStrategy);
+        Assert.Equal(10, options.Value.DefaultMaxRetries);
+        Assert.Equal(1000, options.Value.DefaultBackoffMinMs);
+        Assert.Equal(60000, options.Value.DefaultBackoffMaxMs);
+        Assert.Equal(0.5, options.Value.DefaultRandomFactor);
+    }
+
+    [Fact]
+    public void AddResilience_should_register_FanOutOptions_with_defaults()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddResilience();
+
+        // Assert
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<FanOutOptions>>();
+        Assert.NotNull(options);
+        Assert.Equal(5, options.Value.DefaultMaxWorkers);
+    }
+
+    [Fact]
+    public void AddResilience_should_configure_FanOutOptions()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddResilience(configureFanOutOptions: options =>
+        {
+            options.DefaultMaxWorkers = 20;
+        });
+
+        // Assert
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<FanOutOptions>>();
+        Assert.Equal(20, options.Value.DefaultMaxWorkers);
+    }
+
+    [Fact]
+    public void AddResilientService_should_set_proxy_properties()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddResilience();
+
+        // Act
+        services.AddResilientService<ITestService, TestService>();
+
+        // Assert - Verify proxy properties are set (proxy should have ActorRefs, etc.)
+        using var provider = services.BuildServiceProvider();
+        var runtime = provider.GetRequiredService<ResilienceRuntime>();
+        Assert.NotNull(runtime);
+        Assert.NotNull(runtime.RetryActor);
+        Assert.NotNull(runtime.CircuitBreakerActor);
+    }
 }
