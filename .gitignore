@@ -400,3 +400,6 @@ FodyWeavers.xsd
 .sonarqube/conf/9/FilesToAnalyze.txt
 .sonarqube/conf/9/ProjectOutFolderPath.txt
 .sonarqube/conf/9/SonarProjectConfig.xml
+# Coverage results
+TestResults/
+*.cobertura.xml
