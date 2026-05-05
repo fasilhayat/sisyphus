@@ -64,7 +64,8 @@ public static class ResilienceRegistration
         {
             var runtime = sp.GetRequiredService<ResilienceRuntime>();
             var proxy = DispatchProxy.Create<TInterface, ResilientProxy<TInterface>>();
-            var p = proxy as ResilientProxy<TInterface>;
+            var p = proxy as ResilientProxy<TInterface> ?? 
+                throw new InvalidOperationException($"Failed to create proxy for {typeof(TInterface).Name}");
 
             p.DecoratedInstance = new TImplementation();
             p.ResilienceActorRef = runtime.RetryActor;

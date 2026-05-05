@@ -90,9 +90,9 @@ public class ResilientProxy<T> : DispatchProxy
         var fanOutAttr = FanOutAttributeCache.GetOrAdd(implementedMethod, m => m.GetCustomAttribute<FanOutAttribute>());
 
         if (retryAttr is null && breakerAttr is null && supervisionAttr is null && fanOutAttr is null)
-            return targetMethod.Invoke(DecoratedInstance, args);
+            return targetMethod.Invoke(DecoratedInstance, args ?? Array.Empty<object?>());
 
-        return InvokeResilient(implementedMethod, args, retryAttr, breakerAttr, supervisionAttr, fanOutAttr);
+        return InvokeResilient(implementedMethod, args ?? Array.Empty<object?>(), retryAttr, breakerAttr, supervisionAttr, fanOutAttr);
     }
 
     /// <summary>
@@ -106,7 +106,7 @@ public class ResilientProxy<T> : DispatchProxy
     /// <param name="fanOutAttr">The fan-out configuration attribute.</param>
     /// <returns>The result of the invoked method.</returns>
     /// <exception cref="InvalidOperationException">Thrown when the method does not return a generic Task<T>.</exception>
-    private object InvokeResilient(MethodInfo implementedMethod, object[] args, RetryAttribute? retryAttr, CircuitBreakerAttribute? breakerAttr, SupervisionAttribute? supervisionAttr, FanOutAttribute? fanOutAttr)
+    private object InvokeResilient(MethodInfo implementedMethod, object?[]? args, RetryAttribute? retryAttr, CircuitBreakerAttribute? breakerAttr, SupervisionAttribute? supervisionAttr, FanOutAttribute? fanOutAttr)
     {
         var returnType = implementedMethod.ReturnType;
 
@@ -142,8 +142,13 @@ public class ResilientProxy<T> : DispatchProxy
 
         Func<Task<object>> operation = async () =>
         {
-            var task = (Task<TResult>)implementedMethod.Invoke(DecoratedInstance, args)!;
-            return await task;
+            var result = implementedMethod.Invoke(DecoratedInstance, args);
+            if (result is null)
+                throw new InvalidOperationException("Method invocation returned null");
+            
+            var task = (Task<TResult>)result;
+            var taskResult = await task;
+            return taskResult!;
         };
 
         // Apply supervision if specified (wraps operation with supervised actor)

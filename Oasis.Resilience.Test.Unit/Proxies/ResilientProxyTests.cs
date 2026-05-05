@@ -16,11 +16,12 @@ public class ResilientProxyTests
     /// Tests that proxy can be created and basic properties set.
     /// </summary>
     [Fact]
-    public void Proxy_should_allow_setting_properties()
+    public async Task Proxy_should_allow_setting_properties()
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService>;
+        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+            throw new InvalidOperationException("Failed to create proxy");
 
         var actorSystem = ActorSystem.Create("test-system");
         var supervisionOptions = new SupervisionOptions();
@@ -37,7 +38,7 @@ public class ResilientProxyTests
         Assert.Same(fanOutOptions, resilientProxy.FanOutOptions);
 
         // Cleanup
-        actorSystem.Terminate().Wait();
+        await actorSystem.Terminate();
     }
 
     /// <summary>
@@ -48,7 +49,8 @@ public class ResilientProxyTests
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService>;
+        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+            throw new InvalidOperationException("Failed to create proxy");
         var decorated = new TestService();
         
         resilientProxy.DecoratedInstance = decorated;
@@ -69,7 +71,8 @@ public class ResilientProxyTests
     {
         // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService>;
+        var resilientProxy = proxy as ResilientProxy<ITestService> ?? 
+            throw new InvalidOperationException("Failed to create proxy");
         var decorated = new TestService();
         
         resilientProxy.DecoratedInstance = decorated;

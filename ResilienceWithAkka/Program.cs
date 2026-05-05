@@ -125,7 +125,7 @@ public sealed class TiwazClientActor : ReceiveActor, IWithTimers
             Console.WriteLine($"Retrying in {delay.TotalSeconds} seconds...");
 
             // Use Akka.Timers instead of Scheduler to avoid AK1004
-            Timers.StartSingleTimer("retry", new Retry(attempt + 1), delay);
+            Timers?.StartSingleTimer("retry", new Retry(attempt + 1), delay);
         }
     }
 
