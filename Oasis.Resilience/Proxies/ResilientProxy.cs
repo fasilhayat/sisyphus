@@ -373,42 +373,52 @@ public class ResilientProxy<T> : DispatchProxy
     }
 
     /// <summary>
-    /// Aggregates results from worker actors into the expected return type.
-    /// This method uses a delegate that can be registered to handle specific result types.
+    /// Represents a delegate that aggregates an array of objects into a single result of a specified type.
     /// </summary>
+    /// <remarks>The delegate takes an array of input objects, a source type, and a target type, and returns
+    /// an aggregated result. This field may be null if no aggregator is configured.</remarks>
     private static Func<object[], Type, Type, object>? _resultAggregator;
 
     /// <summary>
-    /// Registers a function to aggregate results from worker actors.
+    /// Registers a custom result aggregator function to be used for combining results.
     /// </summary>
+    /// <remarks>Registering a new aggregator overrides any previously registered aggregator. This method
+    /// should be called before any aggregation operations that rely on the custom logic.</remarks>
+    /// <param name="aggregator">A delegate that defines how to aggregate an array of result objects, given their source and target types. The
+    /// function receives the results, the source type, and the target type, and returns the aggregated result.</param>
     public static void RegisterResultAggregator(Func<object[], Type, Type, object> aggregator)
     {
         _resultAggregator = aggregator;
     }
 
     /// <summary>
-    /// Aggregates results from worker actors into the expected return type.
+    /// Aggregates the specified result objects into a single value of the specified type using the registered result
+    /// aggregator.
     /// </summary>
+    /// <typeparam name="TResult">The type of the aggregated result to return.</typeparam>
+    /// <param name="results">An array of result objects to aggregate. Each element represents an individual result to be combined.</param>
+    /// <param name="workerType">The type of the worker that produced the results. Used by the aggregator to determine aggregation logic.</param>
+    /// <returns>The aggregated result of type TResult produced by combining the input results.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if no result aggregator has been registered prior to calling this method.</exception>
     private TResult AggregateResults<TResult>(object[] results, Type workerType)
     {
         if (_resultAggregator is not null)
-        {
             return (TResult)_resultAggregator(results, workerType, typeof(TResult));
-        }
 
         throw new InvalidOperationException($"No result aggregator registered. Register one using RegisterResultAggregator.");
     }
 
     /// <summary>
-    /// Wraps an operation with supervision, creating a supervised actor to execute the operation.
+    /// Wraps the specified asynchronous operation with supervision logic as defined by the provided supervision
+    /// attribute.
     /// </summary>
+    /// <param name="operation">The asynchronous operation to be executed. The operation is represented as a function that returns a task
+    /// producing an object result.</param>
+    /// <param name="supervision">The supervision attribute that defines the supervision behavior to apply to the operation.</param>
+    /// <returns>A function that, when invoked, executes the original operation under the specified supervision policy and
+    /// returns a task representing the asynchronous result.</returns>
     private Func<Task<object>> WrapWithSupervision(Func<Task<object>> operation, SupervisionAttribute supervision)
     {
-        return async () =>
-        {
-            // For simple supervision without fan-out, we can execute directly
-            // In a full implementation, this would create a supervised actor
-            return await operation();
-        };
+        return async () => await operation();
     }
 }
