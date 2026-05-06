@@ -1,9 +1,9 @@
 ﻿namespace Oasis.Resilience.Proxies;
 
+using Actors;
 using Akka.Actor;
 using Akka.Pattern;
-using Oasis.Resilience.Actors;
-using Oasis.Resilience.Attributes;
+using Attributes;
 using System.Collections.Concurrent;
 using System.Reflection;
 
@@ -75,8 +75,8 @@ public class ResilientProxy<T> : DispatchProxy
     /// <exception cref="InvalidOperationException">Thrown when the implementation method cannot be found on the decorated instance.</exception>
     protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
     {
-        if (targetMethod is null) throw new ArgumentNullException(nameof(targetMethod));
-        if (args is null) throw new ArgumentNullException(nameof(args));
+        ArgumentNullException.ThrowIfNull(targetMethod);
+        ArgumentNullException.ThrowIfNull(args);
 
         var implementedMethod = DecoratedInstance!.GetType().GetMethod(targetMethod.Name, targetMethod.GetParameters()
                 .Select(p => p.ParameterType)
@@ -122,61 +122,55 @@ public class ResilientProxy<T> : DispatchProxy
     /// <summary>
     /// Invokes a generic asynchronous method on the decorated instance with resilience and retry logic.
     /// </summary>
-    /// <typeparam name="TResult">The type of the result returned by the invoked method.</typeparam>
-    /// <param name="implementedMethod">The MethodInfo representing the generic method to invoke.</param>
-    /// <param name="args">The arguments to pass to the method.</param>
-    /// <param name="retryAttr">The retry configuration attribute.</param>
-    /// <param name="breakerAttr">The circuit breaker configuration attribute.</param>
-    /// <param name="supervisionAttr">The supervision configuration attribute.</param>
-    /// <param name="fanOutAttr">The fan-out configuration attribute.</param>
-    /// <returns>A task representing the asynchronous operation, containing the result of the invoked method.</returns>
     private async Task<TResult> InvokeGeneric<TResult>(MethodInfo implementedMethod, object[] args, RetryAttribute? retryAttr, CircuitBreakerAttribute? breakerAttr, SupervisionAttribute? supervisionAttr, FanOutAttribute? fanOutAttr)
     {
-        // Handle FanOut attribute - fan out work to multiple actors
         if (fanOutAttr is not null)
         {
             return await HandleFanOut<TResult>(implementedMethod, args, fanOutAttr, supervisionAttr);
         }
 
-        var operationKey = $"{typeof(T).FullName}.{implementedMethod.Name}";
+        var operation = CreateOperation<TResult>(implementedMethod, args);
 
-        Func<Task<object>> operation = async () =>
-        {
-            var result = implementedMethod.Invoke(DecoratedInstance, args);
-            if (result is null)
-                throw new InvalidOperationException("Method invocation returned null");
-
-            var task = (Task<TResult>)result;
-            var taskResult = await task;
-            return taskResult!;
-        };
-
-        // Apply supervision if specified (wraps operation with supervised actor)
         if (supervisionAttr is not null)
         {
             operation = WrapWithSupervision(operation, supervisionAttr);
         }
 
-        // Apply circuit breaker if specified
+        return await ExecuteResilienceStrategy<TResult>(operation, implementedMethod, breakerAttr, retryAttr, supervisionAttr);
+    }
+
+    /// <summary>
+    /// Executes the appropriate resilience strategy based on configured attributes.
+    /// </summary>
+    private async Task<TResult> ExecuteResilienceStrategy<TResult>(Func<Task<object>> operation, MethodInfo implementedMethod, CircuitBreakerAttribute? breakerAttr, RetryAttribute? retryAttr, SupervisionAttribute? supervisionAttr)
+    {
         if (breakerAttr is not null)
-        {
-            return await ExecuteWithCircuitBreaker<TResult>(operationKey, operation, breakerAttr, retryAttr);
-        }
-
-        // Apply retry if specified
+            return await ExecuteWithCircuitBreaker<TResult>($"{typeof(T).FullName}.{implementedMethod.Name}", operation, breakerAttr, retryAttr);
+        
         if (retryAttr is not null)
-        {
             return await ExecuteWithRetry<TResult>(operation, retryAttr);
-        }
+        
 
-        // If only supervision is specified without retry/circuit breaker, execute with supervision
         if (supervisionAttr is not null)
-        {
-            var result = await operation();
-            return (TResult)result!;
-        }
-
+            return (TResult)await operation();
+        
         throw new InvalidOperationException("No resilience attributes configured.");
+    }
+
+    /// <summary>
+    /// Creates the base operation function for invoking the decorated method.
+    /// </summary>
+    private Func<Task<object>> CreateOperation<TResult>(MethodInfo implementedMethod, object[] args)
+    {
+        return async () =>
+        {
+            var result = implementedMethod.Invoke(DecoratedInstance, args);
+            if (result is null) throw new InvalidOperationException("Method invocation returned null");
+
+            var task = (Task<TResult>)result;
+            var taskResult = await task;
+            return taskResult!;
+        };
     }
 
     /// <summary>
@@ -193,26 +187,26 @@ public class ResilientProxy<T> : DispatchProxy
                 breakerAttr.MaxConcurrentCalls));
 
         if (breakerResult is Status.Failure failure)
-        {
-            if (failure.Cause is CircuitBreakerActor.CircuitBreakerOpenException)
-                throw failure.Cause;
+            return await HandleCircuitBreakerFailure<TResult>(failure, operation, retryAttr);
+        
+        return (TResult)breakerResult!;
+    }
 
-            if (retryAttr is null)
-                throw failure.Cause;
-        }
-        else
-        {
-            return (TResult)breakerResult!;
-        }
+    /// <summary>
+    /// Handles circuit breaker failure, either throwing or falling back to retry.
+    /// </summary>
+    private async Task<TResult> HandleCircuitBreakerFailure<TResult>(Status.Failure failure, Func<Task<object>> operation, RetryAttribute? retryAttr)
+    {
+        if (failure.Cause is CircuitBreakerActor.CircuitBreakerOpenException || retryAttr is null) throw failure.Cause;
 
-        // If we get here, circuit breaker failed but retry is configured
         var result = await ResilienceActorRef.Ask<object>(
             new RetryActor.Execute(
                 operation,
-                retryAttr!.MaxAttempts,
+                retryAttr.MaxAttempts,
                 TimeSpan.FromMilliseconds(retryAttr.InitialDelay)));
 
         if (result is Status.Failure retryFailure) throw retryFailure.Cause;
+
         return (TResult)result!;
     }
 
@@ -221,13 +215,9 @@ public class ResilientProxy<T> : DispatchProxy
     /// </summary>
     private async Task<TResult> ExecuteWithRetry<TResult>(Func<Task<object>> operation, RetryAttribute retryAttr)
     {
-        var result = await ResilienceActorRef.Ask<object>(
-            new RetryActor.Execute(
-                operation,
-                retryAttr.MaxAttempts,
-                TimeSpan.FromMilliseconds(retryAttr.InitialDelay)));
-
+        var result = await ResilienceActorRef.Ask<object>(new RetryActor.Execute(operation, retryAttr.MaxAttempts, TimeSpan.FromMilliseconds(retryAttr.InitialDelay)));
         if (result is Status.Failure f) throw f.Cause;
+
         return (TResult)result!;
     }
 
@@ -237,16 +227,16 @@ public class ResilientProxy<T> : DispatchProxy
     private async Task<TResult> HandleFanOut<TResult>(MethodInfo method, object[] args, FanOutAttribute fanOut, SupervisionAttribute? supervision)
     {
         // Extract fan-out parameters
-        var (maxWorkers, supervisionStrategy, backoffMinMs, backoffMaxMs, randomFactor) = ExtractFanOutParameters(fanOut, supervision);
+        var fanOutParams = ExtractFanOutParameters(fanOut, supervision);
 
         // Create supervisor for worker actors
-        var supervisor = CreateWorkerSupervisor(fanOut.WorkerActorType, supervisionStrategy, backoffMinMs, backoffMaxMs, randomFactor);
+        var supervisor = CreateWorkerSupervisor(fanOut.WorkerActorType, fanOutParams.Strategy, fanOutParams.BackoffMinMs, fanOutParams.BackoffMaxMs, fanOutParams.RandomFactor);
 
         // Find the split parameter
-        var (splitValues, otherArgs) = ExtractSplitParameters(method, args, fanOut.SplitParameterName);
+        var splitParams = ExtractSplitParameters(method, args, fanOut.SplitParameterName);
 
         // Fan-out: send work to multiple workers
-        var tasks = SendWorkToWorkers<TResult>(supervisor, fanOut.WorkerActorType, splitValues, otherArgs, method, maxWorkers);
+        var tasks = SendWorkToWorkers<TResult>(supervisor, fanOut.WorkerActorType, splitParams.SplitValues, splitParams.OtherArgs, method, fanOutParams.MaxWorkers);
 
         // Fan-in: collect results
         var results = await Task.WhenAll(tasks);
@@ -256,7 +246,7 @@ public class ResilientProxy<T> : DispatchProxy
     /// <summary>
     /// Extracts fan-out configuration parameters with fallback to options.
     /// </summary>
-    private (int maxWorkers, SupervisionStrategy strategy, int minMs, int maxMs, double factor) ExtractFanOutParameters(
+    private FanOutParameters ExtractFanOutParameters(
         FanOutAttribute fanOut, SupervisionAttribute? supervision)
     {
         var maxWorkers = fanOut.MaxWorkers != 5 ? fanOut.MaxWorkers : (FanOutOptions?.DefaultMaxWorkers ?? 5);
@@ -265,15 +255,33 @@ public class ResilientProxy<T> : DispatchProxy
         var backoffMaxMs = supervision?.BackoffMaxMs ?? SupervisionOptions?.DefaultBackoffMaxMs ?? 30000;
         var randomFactor = supervision?.RandomFactor ?? SupervisionOptions?.DefaultRandomFactor ?? 0.2;
 
-        return (maxWorkers, supervisionStrategy, backoffMinMs, backoffMaxMs, randomFactor);
+        return new FanOutParameters
+        {
+            MaxWorkers = maxWorkers,
+            Strategy = supervisionStrategy,
+            BackoffMinMs = backoffMinMs,
+            BackoffMaxMs = backoffMaxMs,
+            RandomFactor = randomFactor
+        };
     }
 
     /// <summary>
-    /// Creates a supervisor for worker actors based on supervision strategy.
+    /// Creates and starts a supervisor actor for the specified worker actor type, using the given supervision strategy
+    /// and backoff parameters.
     /// </summary>
+    /// <remarks>If the supervision strategy is RestartWithBackoff, the supervisor uses a backoff policy to
+    /// restart the worker actor after failures. Otherwise, a standard supervisor is created without backoff. The
+    /// returned actor reference can be used to interact with the supervisor or to send messages to the worker actor
+    /// through the supervisor.</remarks>
+    /// <param name="workerActorType">The type of the worker actor to supervise. Must derive from ActorBase.</param>
+    /// <param name="strategy">The supervision strategy to apply to the worker actor. Determines how failures are handled.</param>
+    /// <param name="minMs">The minimum backoff duration, in milliseconds, to wait before restarting the worker actor when using a backoff strategy. Must be non-negative.</param>
+    /// <param name="maxMs">The maximum backoff duration, in milliseconds, to wait before restarting the worker actor when using a backoff strategy. Must be greater than or equal to minMs.</param>
+    /// <param name="factor">The randomization factor used to calculate the backoff delay when using a backoff strategy. Must be non-negative.</param>
+    /// <returns>An IActorRef representing the supervisor actor responsible for managing the specified worker actor.</returns>
     private IActorRef CreateWorkerSupervisor(Type workerActorType, SupervisionStrategy strategy, int minMs, int maxMs, double factor)
     {
-        Props workerProps = Props.Create(() => (ActorBase)Activator.CreateInstance(workerActorType)!);
+        var workerProps = Props.Create(() => (ActorBase)Activator.CreateInstance(workerActorType)!);
 
         if (strategy == SupervisionStrategy.RestartWithBackoff)
         {
@@ -286,16 +294,23 @@ public class ResilientProxy<T> : DispatchProxy
             );
             return ActorSystem.ActorOf(supervisorProps, $"{workerActorType.Name}-supervisor");
         }
-        else
-        {
-            return ActorSystem.ActorOf(workerProps, $"{workerActorType.Name}-pool");
-        }
+
+        return ActorSystem.ActorOf(workerProps, $"{workerActorType.Name}-pool");
     }
 
     /// <summary>
-    /// Extracts split parameter values and other arguments from method call.
+    /// Extracts the split parameter and remaining arguments from the specified method invocation based on the provided
+    /// split parameter name.
     /// </summary>
-    private (Array splitValues, object[] otherArgs) ExtractSplitParameters(MethodInfo method, object[] args, string splitParameterName)
+    /// <remarks>Use this method when you need to separate a specific array parameter (the split parameter)
+    /// from the other arguments for further processing, such as batching or partitioning operations.</remarks>
+    /// <param name="method">The MethodInfo representing the method whose parameters are being analyzed.</param>
+    /// <param name="args">An array of argument values corresponding to the parameters of the method.</param>
+    /// <param name="splitParameterName">The name of the parameter to be treated as the split parameter. This parameter must exist in the method's
+    /// signature and its value must be an array.</param>
+    /// <returns>A SplitParametersResult containing the values of the split parameter and the other arguments.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if a parameter with the specified splitParameterName does not exist in the method's parameters.</exception>
+    private SplitParametersResult ExtractSplitParameters(MethodInfo method, object[] args, string splitParameterName)
     {
         var parameters = method.GetParameters();
         var splitParamIndex = Array.FindIndex(parameters, p => p.Name == splitParameterName);
@@ -305,7 +320,11 @@ public class ResilientProxy<T> : DispatchProxy
         var splitValues = (Array)args[splitParamIndex];
         var otherArgs = args.Where((_, i) => i != splitParamIndex).ToArray();
 
-        return (splitValues, otherArgs);
+        return new SplitParametersResult
+        {
+            SplitValues = splitValues,
+            OtherArgs = otherArgs
+        };
     }
 
     /// <summary>
