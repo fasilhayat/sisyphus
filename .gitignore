@@ -403,3 +403,4 @@ FodyWeavers.xsd
 # Coverage results
 TestResults/
 *.cobertura.xml
+coverage-report/
