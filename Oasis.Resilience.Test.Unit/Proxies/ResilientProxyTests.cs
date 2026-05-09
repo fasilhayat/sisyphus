@@ -36,6 +36,7 @@ public class ResilientProxyTests : ProxyTestBase
         await actorSystem.Terminate();
     }
 
+    /// <summary>Verifies that the proxy allows setting the decorated instance.</summary>
     [Fact]
     public void Proxy_should_allow_setting_decorated_instance()
     {

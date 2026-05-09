@@ -4,12 +4,30 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <Description>Akka.NET-based resilience framework supporting retry, circuit breaker, supervision, and fan-out patterns via AOP DispatchProxy. Apply resilience declaratively using attributes.</Description>
+    <PackageTags>resilience;akka;circuit-breaker;retry;supervision;fan-out;aop;dispatchproxy;dotnet</PackageTags>
+    <Authors>Oasis</Authors>
+    <PackageProjectUrl>https://github.com/oasis/Oasis.Resilience</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/oasis/Oasis.Resilience.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReleaseNotes>Initial release with retry, circuit breaker, supervision, and fan-out support.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>Oasis.Resilience.Test.Unit</_Parameter1>
     </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="assets\icon.png" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

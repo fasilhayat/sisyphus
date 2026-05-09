@@ -404,3 +404,5 @@ FodyWeavers.xsd
 TestResults/
 *.cobertura.xml
 coverage-report/
+
+nupkg/

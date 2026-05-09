@@ -14,6 +14,7 @@ public class ResilienceRegistrationTests
     /// </summary>
     public interface ITestService
     {
+        /// <summary>Executes a simple test method that returns a string result.</summary>
         string SimpleMethod();
     }
 
