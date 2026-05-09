@@ -57,14 +57,14 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
     {
         try
         {
-            LogDebug("Attempt {Attempt} executing...", attempt);
+            LogDebug("Attempt {0} executing...", attempt);
             var result = await operation();
-            LogDebug("Success on attempt {Attempt}", attempt);
+            LogDebug("Success on attempt {0}", attempt);
             originalSender.Tell(result);
         }
         catch (Exception ex)
         {
-            LogDebug("Attempt {Attempt} failed: {Message}", attempt, ex.Message);
+            LogDebug("Attempt {0} failed: {1}", attempt, ex.Message);
 
             if (attempt >= maxAttempts)
             {
@@ -74,7 +74,7 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
 
             var delay = TimeSpan.FromMilliseconds(initialDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
 
-            LogDebug("Retrying in {Delay}s...", delay.TotalSeconds);
+            LogDebug("Retrying in {0}s...", delay.TotalSeconds);
 
             _timerCounter++;
             var timerKey = $"retry-{_timerCounter}-{attempt}";

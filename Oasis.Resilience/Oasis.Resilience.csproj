@@ -16,7 +16,8 @@
     <PackageProjectUrl>https://github.com/oasis/Oasis.Resilience</PackageProjectUrl>
     <RepositoryUrl>https://github.com/oasis/Oasis.Resilience.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageReleaseNotes>Initial release with retry, circuit breaker, supervision, and fan-out support.</PackageReleaseNotes>
+    <Version>1.0.1</Version>
+    <PackageReleaseNotes>Fixed string.Format crash in RetryActor when no structured logger is injected. Named placeholders changed to numeric format.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
