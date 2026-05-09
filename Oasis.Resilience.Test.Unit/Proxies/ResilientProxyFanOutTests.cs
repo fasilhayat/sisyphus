@@ -6,27 +6,26 @@ using System.Reflection;
 using Xunit;
 
 /// <summary>
-/// Unit tests for <see cref="ResilientProxy{T}"/> fan-out functionality.
+/// Unit tests for fan-out behavior in <see cref="ResilientProxy{T}"/>.
 /// </summary>
-/// <remarks>Tests the fan-out attribute handling, message factory registration, and result aggregation.</remarks>
 public class ResilientProxyFanOutTests
 {
     /// <summary>
-    /// Test interface for fan-out proxy testing.
+    /// Test service interface for fan-out operations.
     /// </summary>
     public interface IFanOutService
     {
         /// <summary>
-        /// Gets data for multiple items using fan-out pattern.
+        /// A fan-out method decorated with <see cref="FanOutAttribute"/>.
         /// </summary>
-        /// <param name="items">The array of items to process.</param>
-        /// <returns>A dictionary mapping item IDs to their data.</returns>
+        /// <param name="items">The items to split across workers.</param>
+        /// <returns>A task that yields a dictionary of item IDs to data strings.</returns>
         [FanOut(workerActorType: typeof(TestWorkerActor), splitParameterName: "items")]
         Task<Dictionary<int, string>> GetDataFanOutAsync(int[] items);
     }
 
     /// <summary>
-    /// Test worker actor for fan-out operations.
+    /// Test worker actor that processes <see cref="TestWorkerMessage"/> and replies with <see cref="TestWorkerResult"/>.
     /// </summary>
     public class TestWorkerActor : Akka.Actor.ReceiveActor
     {
@@ -37,33 +36,34 @@ public class ResilientProxyFanOutTests
         {
             Receive<TestWorkerMessage>(msg =>
             {
-                // Simulate work and return result
                 Sender.Tell(new TestWorkerResult(msg.ItemId, $"Data for {msg.ItemId}"), Self);
             });
         }
     }
 
     /// <summary>
-    /// Test worker message containing the item ID to process.
+    /// Represents a work item message for a worker actor.
     /// </summary>
-    /// <param name="ItemId">The ID of the item to process.</param>
+    /// <param name="ItemId">The item identifier.</param>
     public record TestWorkerMessage(int ItemId);
 
     /// <summary>
-    /// Test worker result containing the processed data.
+    /// Represents the result of a worker actor processing.
     /// </summary>
-    /// <param name="ItemId">The ID of the processed item.</param>
-    /// <param name="Data">The processed data.</param>
+    /// <param name="ItemId">The item identifier.</param>
+    /// <param name="Data">The resulting data string.</param>
     public record TestWorkerResult(int ItemId, string Data);
 
     /// <summary>
-    /// Test implementation for fan-out service.
+    /// Test implementation of <see cref="IFanOutService"/>.
     /// </summary>
     public class FanOutService : IFanOutService
     {
         /// <summary>
-        /// Gets data for multiple items (implementation not used directly due to fan-out).
+        /// Returns a dictionary mapping each item ID to its data string.
         /// </summary>
+        /// <param name="items">The array of item IDs.</param>
+        /// <returns>A task that yields a dictionary of item data.</returns>
         public Task<Dictionary<int, string>> GetDataFanOutAsync(int[] items)
         {
             var result = new Dictionary<int, string>();
@@ -74,53 +74,46 @@ public class ResilientProxyFanOutTests
     }
 
     /// <summary>
-    /// Tests that fan-out attribute is properly cached by the proxy.
+    /// Verifies that <see cref="FanOutAttribute"/> is cached for fan-out service methods.
     /// </summary>
     [Fact]
     public void FanOut_should_cache_attribute()
     {
-        // Arrange
         var proxy = DispatchProxy.Create<IFanOutService, ResilientProxy<IFanOutService>>();
         var p = proxy as ResilientProxy<IFanOutService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
-        // Act - Access the attribute cache (indirectly through reflection)
         var method = typeof(IFanOutService).GetMethod(nameof(IFanOutService.GetDataFanOutAsync));
         var attribute = method?.GetCustomAttribute<FanOutAttribute>();
 
-        // Assert
         Assert.NotNull(attribute);
         Assert.Equal(typeof(TestWorkerActor), attribute.WorkerActorType);
         Assert.Equal("items", attribute.SplitParameterName);
     }
 
     /// <summary>
-    /// Tests proxy creation with fan-out attribute present.
+    /// Verifies a fan-out proxy can be created via <see cref="DispatchProxy"/>.
     /// </summary>
     [Fact]
     public void FanOut_proxy_should_be_creatable()
     {
-        // Arrange & Act
         var proxy = DispatchProxy.Create<IFanOutService, ResilientProxy<IFanOutService>>();
         var p = proxy as ResilientProxy<IFanOutService>;
 
-        // Assert
         Assert.NotNull(proxy);
         Assert.NotNull(p);
     }
 
     /// <summary>
-    /// Tests that message factory can be registered on the proxy.
+    /// Verifies a message factory can be registered for fan-out operations.
     /// </summary>
     [Fact]
     public void FanOut_should_allow_registering_message_factory()
     {
-        // Arrange
         var proxy = DispatchProxy.Create<IFanOutService, ResilientProxy<IFanOutService>>();
         var p = proxy as ResilientProxy<IFanOutService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
-        // Act - Should not throw
         ResilientProxy<IFanOutService>.RegisterMessageFactory(
             (actorType, splitValue, parameters, otherArgs) =>
             {
@@ -129,22 +122,19 @@ public class ResilientProxyFanOutTests
                 return splitValue;
             });
 
-        // Assert - If we got here, registration worked
         Assert.True(true);
     }
 
     /// <summary>
-    /// Tests that result aggregator can be registered on the proxy.
+    /// Verifies a result aggregator can be registered for fan-out operations.
     /// </summary>
     [Fact]
     public void FanOut_should_allow_registering_result_aggregator()
     {
-        // Arrange
         var proxy = DispatchProxy.Create<IFanOutService, ResilientProxy<IFanOutService>>();
         var p = proxy as ResilientProxy<IFanOutService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
-        // Act - Should not throw
         ResilientProxy<IFanOutService>.RegisterResultAggregator(
             (results, actorType, returnType) =>
             {
@@ -157,7 +147,6 @@ public class ResilientProxyFanOutTests
                 return dict;
             });
 
-        // Assert - If we got here, registration worked
         Assert.True(true);
     }
 }

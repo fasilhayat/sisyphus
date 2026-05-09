@@ -13,10 +13,17 @@ using Xunit;
 /// </summary>
 public class RetryActorTests : TestKit
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RetryActorTests"/> class.
+    /// </summary>
     public RetryActorTests() : base(GetConfig())
     {
     }
 
+    /// <summary>
+    /// Gets the Akka configuration for tests with reduced logging.
+    /// </summary>
+    /// <returns>An Akka <see cref="Config"/> object.</returns>
     private static Config GetConfig()
     {
         return ConfigurationFactory.ParseString(@"
@@ -27,34 +34,38 @@ public class RetryActorTests : TestKit
         ");
     }
 
+    /// <summary>
+    /// Shared retry options used across tests.
+    /// </summary>
     private readonly RetryOptions _options = new() { LogLevel = LogLevel.None };
 
+    /// <summary>
+    /// Verifies the retry actor succeeds on the first attempt when no exception is thrown.
+    /// </summary>
     [Fact]
     public async Task RetryActor_should_succeed_on_first_attempt()
     {
-        // Arrange
-        var actor = Sys.ActorOf(Props.Create(() => new RetryActor(_options)));
+        var actor = Sys.ActorOf(Props.Create(() => new RetryActor(_options, null)));
         var expectedResult = "success";
 
-        // Act
         actor.Tell(new RetryActor.Execute(
             () => Task.FromResult<object>(expectedResult),
             MaxAttempts: 3,
             InitialDelay: TimeSpan.FromMilliseconds(100)));
 
-        // Assert
         var response = await ExpectMsgAsync<object>();
         Assert.Equal(expectedResult, response);
     }
 
+    /// <summary>
+    /// Verifies the retry actor retries on failure and eventually succeeds.
+    /// </summary>
     [Fact]
     public async Task RetryActor_should_retry_on_failure()
     {
-        // Arrange
-        var actor = Sys.ActorOf(Props.Create(() => new RetryActor(_options)));
+        var actor = Sys.ActorOf(Props.Create(() => new RetryActor(_options, null)));
         var attemptCount = 0;
 
-        // Act - First two attempts fail, third succeeds
         actor.Tell(new RetryActor.Execute(
             () =>
             {
@@ -66,37 +77,37 @@ public class RetryActorTests : TestKit
             MaxAttempts: 3,
             InitialDelay: TimeSpan.FromMilliseconds(100)));
 
-        // Assert
         var response = await ExpectMsgAsync<object>();
         Assert.Equal("success after 3 attempts", response);
     }
 
+    /// <summary>
+    /// Verifies the retry actor returns a failure after exhausting all retry attempts.
+    /// </summary>
     [Fact]
     public async Task RetryActor_should_fail_after_max_attempts()
     {
-        // Arrange
-        var actor = Sys.ActorOf(Props.Create(() => new RetryActor(_options)));
+        var actor = Sys.ActorOf(Props.Create(() => new RetryActor(_options, null)));
 
-        // Act
         actor.Tell(new RetryActor.Execute(
             () => throw new Exception("always fails"),
             MaxAttempts: 2,
             InitialDelay: TimeSpan.FromMilliseconds(100)));
 
-        // Assert
         var response = await ExpectMsgAsync<Status.Failure>();
         Assert.NotNull(response.Cause);
         Assert.Contains("always fails", response.Cause.Message);
     }
 
+    /// <summary>
+    /// Verifies the retry actor applies exponential backoff between retry attempts.
+    /// </summary>
     [Fact]
     public async Task RetryActor_should_apply_exponential_backoff()
     {
-        // Arrange
-        var actor = Sys.ActorOf(Props.Create(() => new RetryActor(_options)));
+        var actor = Sys.ActorOf(Props.Create(() => new RetryActor(_options, null)));
         var attemptTimes = new List<DateTime>();
 
-        // Act
         actor.Tell(new RetryActor.Execute(
             () =>
             {
@@ -108,27 +119,24 @@ public class RetryActorTests : TestKit
             MaxAttempts: 4,
             InitialDelay: TimeSpan.FromMilliseconds(100)));
 
-        // Assert - Should succeed after retries
         var response = await ExpectMsgAsync<object>();
         Assert.Equal("success", response);
-
-        // Verify exponential backoff (second attempt should be delayed more than first)
         Assert.True(attemptTimes.Count >= 2);
     }
 
+    /// <summary>
+    /// Verifies the retry actor handles different return types, such as integers.
+    /// </summary>
     [Fact]
     public async Task RetryActor_should_handle_different_return_types()
     {
-        // Arrange
-        var actor = Sys.ActorOf(Props.Create(() => new RetryActor(_options)));
+        var actor = Sys.ActorOf(Props.Create(() => new RetryActor(_options, null)));
 
-        // Act - Return an integer
         actor.Tell(new RetryActor.Execute(
             () => Task.FromResult<object>(42),
             MaxAttempts: 1,
             InitialDelay: TimeSpan.FromMilliseconds(100)));
 
-        // Assert
         var response = await ExpectMsgAsync<object>();
         Assert.Equal(42, (int)response);
     }

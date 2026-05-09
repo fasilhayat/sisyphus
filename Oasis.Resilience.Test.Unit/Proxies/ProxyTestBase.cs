@@ -4,15 +4,20 @@ using Akka.Actor;
 using Akka.Configuration;
 
 /// <summary>
-/// Base class for proxy tests that provides ActorSystem creation with suppressed logging.
+/// Base class for proxy tests that manages <see cref="ActorSystem"/> lifecycle.
 /// </summary>
-public abstract class ProxyTestBase : IDisposable
+public abstract class ProxyTestBase : IAsyncDisposable
 {
+    /// <summary>
+    /// Tracks all created actor systems for cleanup during disposal.
+    /// </summary>
     private readonly List<ActorSystem> _actorSystems = new();
 
     /// <summary>
-    /// Creates an ActorSystem with logging suppressed to prevent CoordinatedShutdown messages.
+    /// Creates an <see cref="ActorSystem"/> with the specified name and test configuration.
     /// </summary>
+    /// <param name="name">The name of the actor system.</param>
+    /// <returns>The created <see cref="ActorSystem"/>.</returns>
     protected ActorSystem CreateActorSystem(string name)
     {
         var config = ConfigurationFactory.ParseString(@"
@@ -31,19 +36,23 @@ public abstract class ProxyTestBase : IDisposable
     }
 
     /// <summary>
-    /// Creates an ActorSystem with logging suppressed, using a unique name.
+    /// Creates an <see cref="ActorSystem"/> with a unique generated name.
     /// </summary>
+    /// <returns>The created <see cref="ActorSystem"/>.</returns>
     protected ActorSystem CreateActorSystem()
     {
         return CreateActorSystem($"test-system-{Guid.NewGuid()}");
     }
 
-    /// <inheritdoc/>
-    public void Dispose()
+    /// <summary>
+    /// Terminates all actor systems and releases resources.
+    /// </summary>
+    /// <returns>A <see cref="ValueTask"/> representing the asynchronous dispose operation.</returns>
+    public async ValueTask DisposeAsync()
     {
         foreach (var system in _actorSystems)
         {
-            system.Terminate().Wait(TimeSpan.FromSeconds(5));
+            await system.Terminate();
         }
         _actorSystems.Clear();
     }

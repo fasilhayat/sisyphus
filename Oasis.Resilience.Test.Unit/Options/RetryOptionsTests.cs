@@ -9,6 +9,9 @@ using Xunit;
 /// </summary>
 public class RetryOptionsTests
 {
+    /// <summary>
+    /// Verifies the default <see cref="RetryOptions.LogLevel"/> is <see cref="LogLevel.Debug"/>.
+    /// </summary>
     [Fact]
     public void DefaultLogLevel_should_be_Debug()
     {
@@ -19,6 +22,9 @@ public class RetryOptionsTests
         Assert.Equal(LogLevel.Debug, options.LogLevel);
     }
 
+    /// <summary>
+    /// Verifies <see cref="RetryOptions.LogLevel"/> can be set to <see cref="LogLevel.Information"/>.
+    /// </summary>
     [Fact]
     public void Should_allow_setting_LogLevel()
     {
@@ -32,6 +38,9 @@ public class RetryOptionsTests
         Assert.Equal(LogLevel.Information, options.LogLevel);
     }
 
+    /// <summary>
+    /// Verifies <see cref="RetryOptions.LogLevel"/> can be set to <see cref="LogLevel.Warning"/>.
+    /// </summary>
     [Fact]
     public void Should_allow_setting_LogLevel_to_Warning()
     {
@@ -45,6 +54,9 @@ public class RetryOptionsTests
         Assert.Equal(LogLevel.Warning, options.LogLevel);
     }
 
+    /// <summary>
+    /// Verifies <see cref="RetryOptions.LogLevel"/> can be set to <see cref="LogLevel.None"/>.
+    /// </summary>
     [Fact]
     public void Should_allow_setting_LogLevel_to_None()
     {

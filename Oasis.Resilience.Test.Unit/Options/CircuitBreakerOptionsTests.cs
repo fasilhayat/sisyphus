@@ -8,6 +8,9 @@ using Xunit;
 /// </summary>
 public class CircuitBreakerOptionsTests
 {
+    /// <summary>
+    /// Verifies the default <see cref="CircuitBreakerOptions.DefaultFailureThreshold"/> is 5.
+    /// </summary>
     [Fact]
     public void DefaultFailureThreshold_should_be_5()
     {
@@ -18,6 +21,9 @@ public class CircuitBreakerOptionsTests
         Assert.Equal(5, options.DefaultFailureThreshold);
     }
 
+    /// <summary>
+    /// Verifies the default <see cref="CircuitBreakerOptions.DefaultResetTimeout"/> is 30000.
+    /// </summary>
     [Fact]
     public void DefaultResetTimeout_should_be_30000()
     {
@@ -28,6 +34,9 @@ public class CircuitBreakerOptionsTests
         Assert.Equal(30000, options.DefaultResetTimeout);
     }
 
+    /// <summary>
+    /// Verifies the default <see cref="CircuitBreakerOptions.DefaultMaxConcurrentCalls"/> is 1.
+    /// </summary>
     [Fact]
     public void DefaultMaxConcurrentCalls_should_be_1()
     {
@@ -38,6 +47,9 @@ public class CircuitBreakerOptionsTests
         Assert.Equal(1, options.DefaultMaxConcurrentCalls);
     }
 
+    /// <summary>
+    /// Verifies <see cref="CircuitBreakerOptions.DefaultFailureThreshold"/> can be set to a custom value.
+    /// </summary>
     [Fact]
     public void Should_allow_setting_FailureThreshold()
     {
@@ -51,6 +63,9 @@ public class CircuitBreakerOptionsTests
         Assert.Equal(10, options.DefaultFailureThreshold);
     }
 
+    /// <summary>
+    /// Verifies <see cref="CircuitBreakerOptions.DefaultResetTimeout"/> can be set to a custom value.
+    /// </summary>
     [Fact]
     public void Should_allow_setting_ResetTimeout()
     {
@@ -64,6 +79,9 @@ public class CircuitBreakerOptionsTests
         Assert.Equal(60000, options.DefaultResetTimeout);
     }
 
+    /// <summary>
+    /// Verifies <see cref="CircuitBreakerOptions.DefaultMaxConcurrentCalls"/> can be set to a custom value.
+    /// </summary>
     [Fact]
     public void Should_allow_setting_MaxConcurrentCalls()
     {

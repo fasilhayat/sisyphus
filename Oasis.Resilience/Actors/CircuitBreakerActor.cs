@@ -5,58 +5,70 @@ using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
 /// <summary>
-/// An Akka.NET actor that implements the circuit breaker pattern to prevent cascading failures.
+/// An Akka.NET actor that implements the circuit breaker pattern, tracking failure counts per operation key
+/// and transitioning between Closed, Open, and HalfOpen states.
 /// </summary>
-/// <remarks>
-/// Tracks failure counts per operation and transitions between Closed, Open, and Half-Open states.
-/// When the circuit is open, requests fail fast without executing the underlying operation.
-/// </remarks>
 public sealed class CircuitBreakerActor : ReceiveActor
 {
     /// <summary>
-    /// Represents the state of a circuit breaker.
+    /// Defines the possible states of a circuit breaker.
     /// </summary>
     public enum CircuitState
     {
+        /// <summary>Circuit is closed; calls are allowed through.</summary>
         Closed,
+        /// <summary>Circuit is open; calls are rejected.</summary>
         Open,
+        /// <summary>Circuit is half-open; a limited number of test calls are allowed.</summary>
         HalfOpen
     }
 
     /// <summary>
-    /// Message to execute an operation through the circuit breaker.
+    /// Instructs the actor to execute an operation with circuit breaker protection.
     /// </summary>
+    /// <param name="OperationKey">Unique key identifying the operation.</param>
+    /// <param name="Operation">The operation to execute.</param>
+    /// <param name="FailureThreshold">Number of consecutive failures before opening.</param>
+    /// <param name="ResetTimeout">Duration before transitioning to half-open.</param>
+    /// <param name="MaxConcurrentCalls">Max concurrent test calls in half-open state.</param>
     public sealed record ExecuteWithBreaker(string OperationKey, Func<Task<object>> Operation, int FailureThreshold, TimeSpan ResetTimeout, int MaxConcurrentCalls);
 
     /// <summary>
-    /// Message reporting a successful operation.
+    /// Signals a successful operation execution.
     /// </summary>
+    /// <param name="OperationKey">Unique key identifying the operation.</param>
     public sealed record Success(string OperationKey);
 
     /// <summary>
-    /// Message reporting a failed operation.
+    /// Signals a failed operation execution.
     /// </summary>
+    /// <param name="OperationKey">Unique key identifying the operation.</param>
+    /// <param name="Exception">The exception that occurred.</param>
     public sealed record Failure(string OperationKey, Exception Exception);
 
     /// <summary>
-    /// Message to query the current state of a circuit breaker.
+    /// Requests the current state of a circuit breaker.
     /// </summary>
+    /// <param name="OperationKey">Unique key identifying the operation.</param>
     public sealed record GetState(string OperationKey);
 
     /// <summary>
-    /// Message containing the current state of a circuit breaker.
+    /// Response containing the current state and failure count of a circuit breaker.
     /// </summary>
+    /// <param name="OperationKey">Unique key identifying the operation.</param>
+    /// <param name="State">The current circuit state.</param>
+    /// <param name="FailureCount">The number of consecutive failures.</param>
     public sealed record StateResponse(string OperationKey, CircuitState State, int FailureCount);
 
     /// <summary>
-    /// Exception thrown when the circuit breaker is open and calls are not permitted.
+    /// Exception thrown when a circuit breaker is open and calls are being rejected.
     /// </summary>
     public sealed class CircuitBreakerOpenException : Exception
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="CircuitBreakerOpenException"/> class.
         /// </summary>
-        /// <param name="operationKey">The operation key associated with the circuit breaker.</param>
+        /// <param name="operationKey">The operation key that is blocked.</param>
         /// <param name="remainingTime">The remaining time before the circuit transitions to half-open.</param>
         public CircuitBreakerOpenException(string operationKey, TimeSpan remainingTime)
             : base($"Circuit breaker is open for '{operationKey}'. Retry after {remainingTime.TotalMilliseconds}ms.")
@@ -65,37 +77,17 @@ public sealed class CircuitBreakerActor : ReceiveActor
             RemainingTime = remainingTime;
         }
 
-        /// <summary>
-        /// Gets the operation key associated with the circuit breaker.
-        /// </summary>
+        /// <summary>Gets the operation key that is blocked.</summary>
         public string OperationKey { get; }
 
-        /// <summary>
-        /// Gets the remaining time before the circuit transitions to half-open.
-        /// </summary>
+        /// <summary>Gets the remaining time before the circuit transitions to half-open.</summary>
         public TimeSpan RemainingTime { get; }
     }
 
-    /// <summary>
-    /// Provides resilience configuration settings used by the actor.
-    /// </summary>
-    private readonly RetryOptions _options;
-
-    /// <summary>
-    /// Stores the state of circuit breakers keyed by operation.
-    /// </summary>
+    private readonly LogLevel _logLevel;
+    private readonly ILogger<CircuitBreakerActor>? _logger;
     private readonly ConcurrentDictionary<string, BreakerState> _breakers = new();
 
-    /// <summary>
-    /// Represents the immutable state of a circuit breaker.
-    /// </summary>
-    /// <param name="State">The current state of the circuit breaker.</param>
-    /// <param name="FailureCount">The number of consecutive failures.</param>
-    /// <param name="SuccessCount">The number of successful calls in half-open state.</param>
-    /// <param name="OpenedAt">The time when the circuit transitioned to open state.</param>
-    /// <param name="MaxConcurrentCalls">The maximum concurrent calls allowed in half-open state.</param>
-    /// <param name="ResetTimeout">The duration before an open circuit transitions to half-open.</param>
-    /// <param name="FailureThreshold">The number of consecutive failures required to open the circuit.</param>
     private sealed record BreakerState(
         CircuitState State,
         int FailureCount,
@@ -106,12 +98,14 @@ public sealed class CircuitBreakerActor : ReceiveActor
         int FailureThreshold);
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="CircuitBreakerActor"/> class and configures message handlers.
+    /// Initializes a new instance of the <see cref="CircuitBreakerActor"/> class.
     /// </summary>
-    /// <param name="options">The resilience configuration options.</param>
-    public CircuitBreakerActor(RetryOptions options)
+    /// <param name="logLevel">The log level for console output when no logger is provided.</param>
+    /// <param name="logger">Optional logger instance.</param>
+    public CircuitBreakerActor(LogLevel logLevel = LogLevel.Debug, ILogger<CircuitBreakerActor>? logger = null)
     {
-        _options = options;
+        _logLevel = logLevel;
+        _logger = logger;
 
         ReceiveAsync<ExecuteWithBreaker>(HandleExecuteWithBreaker);
         Receive<Success>(HandleSuccess);
@@ -119,11 +113,7 @@ public sealed class CircuitBreakerActor : ReceiveActor
         Receive<GetState>(HandleGetState);
     }
 
-    /// <summary>
-    /// Handles execute requests by checking circuit breaker state and executing the operation if permitted.
-    /// </summary>
-    /// <param name="msg">The execution request containing the operation key, delegate, and circuit breaker configuration.</param>
-    /// <returns>A task that represents the asynchronous operation.</returns>
+    /// <summary>Handles a breaker execution request by checking state and running the operation if allowed.</summary>
     private async Task HandleExecuteWithBreaker(ExecuteWithBreaker msg)
     {
         var breaker = _breakers.GetOrAdd(msg.OperationKey, _ =>
@@ -133,65 +123,68 @@ public sealed class CircuitBreakerActor : ReceiveActor
 
         if (currentState == CircuitState.Open)
         {
-            var remainingTime = msg.ResetTimeout - (DateTime.UtcNow - breaker.OpenedAt!.Value);
-            Sender.Tell(new Status.Failure(new CircuitBreakerOpenException(msg.OperationKey, remainingTime)));
+            RejectOpenCircuit(msg, breaker);
             return;
         }
 
-        if (currentState == CircuitState.HalfOpen &&
-            breaker.SuccessCount >= breaker.MaxConcurrentCalls)
+        if (IsHalfOpenLimitReached(currentState, breaker))
+            return;
+
+        await ExecuteOperation(msg, breaker);
+    }
+
+    /// <summary>Rejects the operation with a <see cref="CircuitBreakerOpenException"/> when the circuit is open.</summary>
+    private void RejectOpenCircuit(ExecuteWithBreaker msg, BreakerState breaker)
+    {
+        var remainingTime = msg.ResetTimeout - (DateTime.UtcNow - breaker.OpenedAt!.Value);
+        Sender.Tell(new Status.Failure(new CircuitBreakerOpenException(msg.OperationKey, remainingTime)));
+    }
+
+    /// <summary>Checks whether the half-open concurrent call limit has been reached.</summary>
+    private bool IsHalfOpenLimitReached(CircuitState currentState, BreakerState breaker)
+    {
+        if (currentState == CircuitState.HalfOpen && breaker.SuccessCount >= breaker.MaxConcurrentCalls)
         {
-            Sender.Tell(new Status.Failure(new CircuitBreakerOpenException(msg.OperationKey, TimeSpan.Zero)));
-            return;
+            Sender.Tell(new Status.Failure(new CircuitBreakerOpenException(string.Empty, TimeSpan.Zero)));
+            return true;
         }
+        return false;
+    }
 
+    /// <summary>Executes the wrapped operation and records success or failure.</summary>
+    private async Task ExecuteOperation(ExecuteWithBreaker msg, BreakerState breaker)
+    {
         try
         {
             var result = await msg.Operation();
-            // Update state synchronously before sending response
             HandleSuccess(new Success(msg.OperationKey));
             Sender.Tell(result);
         }
         catch (Exception ex)
         {
-            // Update state synchronously before sending response
             HandleFailure(new Failure(msg.OperationKey, ex));
             Sender.Tell(new Status.Failure(ex));
         }
     }
 
-    /// <summary>
-    /// Handles success messages by resetting the circuit breaker to closed state.
-    /// </summary>
-    /// <param name="msg">The success message containing the operation key.</param>
+    /// <summary>Records a successful operation and resets the circuit breaker state.</summary>
     private void HandleSuccess(Success msg)
     {
         _breakers.AddOrUpdate(
             msg.OperationKey,
             key => new BreakerState(CircuitState.Closed, 0, 1, null, 1, TimeSpan.FromSeconds(30), 5),
-            (key, state) =>
-            {
-                if (state.State == CircuitState.HalfOpen)
-                {
-                    var newSuccessCount = state.SuccessCount + 1;
-                    return new BreakerState(CircuitState.Closed, 0, newSuccessCount, null, state.MaxConcurrentCalls, state.ResetTimeout, state.FailureThreshold);
-                }
-
-                return new BreakerState(CircuitState.Closed, 0, state.SuccessCount, null, state.MaxConcurrentCalls, state.ResetTimeout, state.FailureThreshold);
-            });
+            (key, state) => state.State == CircuitState.HalfOpen
+                ? state with { State = CircuitState.Closed, FailureCount = 0, SuccessCount = state.SuccessCount + 1 }
+                : state with { State = CircuitState.Closed, FailureCount = 0 });
 
         Log($"Circuit breaker for '{msg.OperationKey}' is now Closed");
     }
 
-    /// <summary>
-    /// Handles failure messages by incrementing the failure count and potentially opening the circuit.
-    /// </summary>
-    /// <param name="msg">The failure message containing the operation key and exception.</param>
+    /// <summary>Records a failed operation and opens the circuit if the failure threshold is reached.</summary>
     private void HandleFailure(Failure msg)
     {
         _breakers.AddOrUpdate(
             msg.OperationKey,
-            // This initial lambda should rarely be called since state is created in HandleExecuteWithBreaker
             key => new BreakerState(CircuitState.Open, 1, 0, DateTime.UtcNow, 1, TimeSpan.FromSeconds(30), 5),
             (key, state) =>
             {
@@ -199,17 +192,19 @@ public sealed class CircuitBreakerActor : ReceiveActor
                 if (newFailureCount >= state.FailureThreshold)
                 {
                     Log($"Circuit breaker for '{msg.OperationKey}' opened after {newFailureCount} failures");
-                    return new BreakerState(CircuitState.Open, newFailureCount, 0, DateTime.UtcNow, state.MaxConcurrentCalls, state.ResetTimeout, state.FailureThreshold);
+                    return state with
+                    {
+                        State = CircuitState.Open,
+                        FailureCount = newFailureCount,
+                        OpenedAt = DateTime.UtcNow
+                    };
                 }
 
-                return new BreakerState(state.State, newFailureCount, state.SuccessCount, state.OpenedAt, state.MaxConcurrentCalls, state.ResetTimeout, state.FailureThreshold);
+                return state with { FailureCount = newFailureCount };
             });
     }
 
-    /// <summary>
-    /// Handles state query requests by returning the current effective state of a circuit breaker.
-    /// </summary>
-    /// <param name="msg">The state query message containing the operation key.</param>
+    /// <summary>Responds with the current state and failure count for the requested operation key.</summary>
     private void HandleGetState(GetState msg)
     {
         if (_breakers.TryGetValue(msg.OperationKey, out var state))
@@ -223,35 +218,29 @@ public sealed class CircuitBreakerActor : ReceiveActor
         }
     }
 
-    /// <summary>
-    /// Determines the effective state of a circuit breaker by checking if an open circuit has elapsed.
-    /// </summary>
-    /// <param name="state">The current stored state of the circuit breaker.</param>
-    /// <param name="resetTimeout">The duration before an open circuit transitions to half-open.</param>
-    /// <returns>The effective circuit state based on elapsed time.</returns>
+    /// <summary>Returns the effective circuit state, transitioning to half-open if the reset timeout has elapsed.</summary>
     private CircuitState GetEffectiveState(BreakerState state, TimeSpan resetTimeout)
     {
         if (state.State == CircuitState.Open && state.OpenedAt.HasValue)
         {
             var elapsed = DateTime.UtcNow - state.OpenedAt.Value;
             if (elapsed >= resetTimeout)
-            {
                 return CircuitState.HalfOpen;
-            }
         }
 
         return state.State;
     }
 
-    /// <summary>
-    /// Logs a message to the console when the configured log level includes debug output.
-    /// </summary>
-    /// <param name="message">The message to write to the console.</param>
+    /// <summary>Logs a debug message via the logger or writes to the console.</summary>
     private void Log(string message)
     {
-        if (_options.LogLevel > LogLevel.Debug)
-            return;
-
-        Console.WriteLine($"[CircuitBreaker] {message}");
+        if (_logger is not null)
+        {
+            _logger.LogDebug("{Message}", message);
+        }
+        else if (_logLevel <= LogLevel.Debug)
+        {
+            Console.WriteLine($"[CircuitBreaker] {message}");
+        }
     }
 }

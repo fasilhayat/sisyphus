@@ -8,9 +8,9 @@ using Microsoft.Extensions.Logging;
 using Oasis.Resilience;
 using Oasis.Resilience.Proxies;
 
+// Configure message factory and result aggregator for fan-out operations.
 var services = new ServiceCollection();
 
-// Register message factory for HolidayWorkerActor
 ResilientProxy<IHolidayService>.RegisterMessageFactory((workerType, splitValue, parameters, otherArgs) =>
 {
     if (workerType == typeof(HolidayWorkerActor))
@@ -22,7 +22,6 @@ ResilientProxy<IHolidayService>.RegisterMessageFactory((workerType, splitValue, 
     throw new InvalidOperationException($"Unknown worker type: {workerType.Name}");
 });
 
-// Register result aggregator for holiday service
 ResilientProxy<IHolidayService>.RegisterResultAggregator((results, workerType, returnType) =>
 {
     if (returnType == typeof(Dictionary<int, string>) && workerType == typeof(HolidayWorkerActor))
@@ -40,10 +39,11 @@ ResilientProxy<IHolidayService>.RegisterResultAggregator((results, workerType, r
     throw new InvalidOperationException($"Unsupported return type {returnType.Name} for worker {workerType.Name}");
 });
 
-services.AddResilience(options => options.LogLevel = LogLevel.Debug).AddResilientService<ICalendarService, CalendarService>();
-services.AddResilience().AddResilientService<ITiwazService, TiwazService>();
-services.AddResilience().AddResilientService<IInventoryService, InventoryService>();
-services.AddResilience().AddResilientService<IHolidayService, HolidayService>();
+services.AddResilience(options => options.LogLevel = LogLevel.Debug);
+services.AddResilientService<ICalendarService, CalendarService>();
+services.AddResilientService<ITiwazService, TiwazService>();
+services.AddResilientService<IInventoryService, InventoryService>();
+services.AddResilientService<IHolidayService, HolidayService>();
 
 using var serviceProvider = services.BuildServiceProvider();
 

@@ -1,83 +1,104 @@
 ﻿namespace Oasis.Resilience;
 
 using Akka.Actor;
+using Akka.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Oasis.Resilience.Actors;
 
 /// <summary>
-/// Provides runtime management for the resilience actor system, including initialization and shutdown.
+/// Manages the Akka.NET actor system and creates the core resilience actors (retry, circuit breaker).
 /// </summary>
-/// <remarks>Manages the lifecycle of the underlying actor system and exposes resilience actors for message handling.</remarks>
-internal sealed class ResilienceRuntime
+internal sealed class ResilienceRuntime : IDisposable, IAsyncDisposable
 {
-    /// <summary>
-    /// Stores the retry configuration options used for the retry actor.
-    /// </summary>
+    private static readonly Config DefaultConfig = ConfigurationFactory.ParseString(@"
+        akka.loglevel = ERROR
+        akka.stdout-loglevel = ERROR
+        akka.suppress-json-serializer-warning = on
+        akka.log-config-on-start = off
+        akka.coordinated-shutdown.log-level = ERROR
+    ");
+
     private readonly RetryOptions _retryOptions;
 
     /// <summary>
-    /// Stores the circuit breaker configuration options (unused but available for future use).
+    /// Gets the Akka.NET actor system instance.
     /// </summary>
-    private readonly CircuitBreakerOptions _breakerOptions;
+    public ActorSystem System { get; }
 
     /// <summary>
-    /// Stores the supervision configuration options.
-    /// </summary>
-    private readonly SupervisionOptions _supervisionOptions;
-
-    /// <summary>
-    /// Stores the fan-out configuration options.
-    /// </summary>
-    private readonly FanOutOptions _fanOutOptions;
-
-    /// <summary>
-    /// Gets the actor system used for managing actors and message processing.
-    /// </summary>
-    public ActorSystem System { get; } = ActorSystem.Create("resilience-system");
-
-    /// <summary>
-    /// Gets the actor reference associated with retry operations.
+    /// Gets the actor ref for the retry actor.
     /// </summary>
     public IActorRef RetryActor { get; }
 
     /// <summary>
-    /// Gets the actor reference associated with circuit breaker operations.
+    /// Gets the actor ref for the circuit breaker actor.
     /// </summary>
     public IActorRef CircuitBreakerActor { get; }
 
     /// <summary>
-    /// Gets the supervision options for fallback values.
+    /// Gets the supervision options configured for this runtime.
     /// </summary>
-    public SupervisionOptions SupervisionOptions => _supervisionOptions;
+    public SupervisionOptions SupervisionOptions { get; }
 
     /// <summary>
-    /// Gets the fan-out options for fallback values.
+    /// Gets the fan-out options configured for this runtime.
     /// </summary>
-    public FanOutOptions FanOutOptions => _fanOutOptions;
+    public FanOutOptions FanOutOptions { get; }
 
     /// <summary>
-    /// Initializes a new instance of the ResilienceRuntime class and creates the resilience actors.
+    /// Initializes a new instance of the <see cref="ResilienceRuntime"/> class.
     /// </summary>
+    /// <param name="retryOptions">Retry configuration options.</param>
+    /// <param name="breakerOptions">Circuit breaker configuration options.</param>
+    /// <param name="supervisionOptions">Supervision configuration options.</param>
+    /// <param name="fanOutOptions">Fan-out configuration options.</param>
+    /// <param name="loggerFactory">Optional logger factory for creating actor loggers.</param>
+    /// <param name="config">Optional Akka.NET configuration. Uses a default with ERROR log level if not specified.</param>
     public ResilienceRuntime(
         IOptions<RetryOptions> retryOptions,
         IOptions<CircuitBreakerOptions> breakerOptions,
         IOptions<SupervisionOptions> supervisionOptions,
-        IOptions<FanOutOptions> fanOutOptions)
+        IOptions<FanOutOptions> fanOutOptions,
+        ILoggerFactory? loggerFactory = null,
+        Config? config = null)
     {
         _retryOptions = retryOptions.Value;
-        _breakerOptions = breakerOptions.Value;
-        _supervisionOptions = supervisionOptions.Value;
-        _fanOutOptions = fanOutOptions.Value;
+        _ = breakerOptions.Value;
+        SupervisionOptions = supervisionOptions.Value;
+        FanOutOptions = fanOutOptions.Value;
 
-        RetryActor = System.ActorOf(Props.Create(() => new RetryActor(_retryOptions)), "resilience");
-        CircuitBreakerActor = System.ActorOf(Props.Create(() => new CircuitBreakerActor(_retryOptions)), "circuit-breaker");
+        System = ActorSystem.Create("resilience-system", config ?? DefaultConfig);
+
+        var retryLogger = loggerFactory?.CreateLogger<RetryActor>();
+        var breakerLogger = loggerFactory?.CreateLogger<CircuitBreakerActor>();
+
+        RetryActor = System.ActorOf(Props.Create(() => new RetryActor(_retryOptions, retryLogger)), "resilience");
+        CircuitBreakerActor = System.ActorOf(
+            Props.Create(() => new CircuitBreakerActor(_retryOptions.LogLevel, breakerLogger)), "circuit-breaker");
     }
 
     /// <summary>
-    /// Shuts down the system and waits for termination to complete.
+    /// Gracefully shuts down the actor system.
     /// </summary>
-    public void Shutdown()
+    public async Task ShutdownAsync()
     {
-        System.Terminate().Wait();
+        await System.Terminate();
+    }
+
+    /// <summary>
+    /// Disposes the actor system resources synchronously.
+    /// </summary>
+    public void Dispose()
+    {
+        System.Terminate().Wait(TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    /// Disposes the actor system resources asynchronously.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        await System.Terminate();
     }
 }

@@ -1,80 +1,69 @@
 namespace Oasis.Resilience.Test.Unit.Infrastructure;
 
+using Akka.Configuration;
 using Oasis.Resilience.Attributes;
 using Oasis.Resilience.Proxies;
-using System.Collections.Concurrent;
 using System.Reflection;
 using Xunit;
 
 /// <summary>
-/// Unit tests for ResilientProxy core methods including InvokeResilient, HandleFanOut, and static factory methods.
+/// Unit tests for the core <see cref="ResilientProxy{T}"/> infrastructure.
 /// </summary>
 public class ResilientProxyCoreTests
 {
     /// <summary>
-    /// Tests that RegisterMessageFactory correctly registers a message factory delegate.
+    /// Verifies <see cref="ResilientProxy{T}.RegisterMessageFactory"/> stores the factory globally.
     /// </summary>
     [Fact]
     public void RegisterMessageFactory_should_set_factory()
     {
-        // Arrange
         Func<Type, object, ParameterInfo[], object[], object> factory = (type, splitValue, parameters, otherArgs) =>
         {
             return new object();
         };
 
-        // Act
         ResilientProxy<ITestService>.RegisterMessageFactory(factory);
 
-        // Use reflection to verify the factory was set
-        var field = typeof(ResilientProxy<ITestService>).GetField("_messageFactory",
+        var field = typeof(ResilientProxy<ITestService>).GetField("_globalMessageFactory",
             BindingFlags.NonPublic | BindingFlags.Static);
         var storedFactory = field?.GetValue(null) as Func<Type, object, ParameterInfo[], object[], object>;
 
-        // Assert
         Assert.NotNull(storedFactory);
     }
 
     /// <summary>
-    /// Tests that RegisterResultAggregator correctly registers an aggregator delegate.
+    /// Verifies <see cref="ResilientProxy{T}.RegisterResultAggregator"/> stores the aggregator globally.
     /// </summary>
     [Fact]
     public void RegisterResultAggregator_should_set_aggregator()
     {
-        // Arrange
         Func<object[], Type, Type, object> aggregator = (results, workerType, returnType) =>
         {
             return new object();
         };
 
-        // Act
         ResilientProxy<ITestService>.RegisterResultAggregator(aggregator);
 
-        // Use reflection to verify the aggregator was set
-        var field = typeof(ResilientProxy<ITestService>).GetField("_resultAggregator",
+        var field = typeof(ResilientProxy<ITestService>).GetField("_globalResultAggregator",
             BindingFlags.NonPublic | BindingFlags.Static);
         var storedAggregator = field?.GetValue(null) as Func<object[], Type, Type, object>;
 
-        // Assert
         Assert.NotNull(storedAggregator);
     }
 
     /// <summary>
-    /// Tests attribute caching for RetryAttribute.
+    /// Verifies that <see cref="RetryAttribute"/> values are cached for method invocations.
     /// </summary>
     [Fact]
     public void Attribute_caching_should_work_for_retry()
     {
-        // Arrange
         var method = typeof(ITestService).GetMethod(nameof(ITestService.GetDataAsync));
 
-        // Clear cache first using reflection
         var cacheField = typeof(ResilientProxy<ITestService>).GetField("RetryAttributeCache",
             BindingFlags.NonPublic | BindingFlags.Static);
-        var cache = cacheField?.GetValue(null) as ConcurrentDictionary<MethodInfo, RetryAttribute?>;
+        var cache = cacheField?.GetValue(null) as System.Collections.Concurrent.ConcurrentDictionary<MethodInfo, RetryAttribute?>;
         cache?.TryRemove(method!, out _);
 
-        // Act - Call to trigger caching
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
         var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
@@ -82,28 +71,24 @@ public class ResilientProxyCoreTests
 
         try { proxy.GetDataAsync(); } catch { }
 
-        // Assert - Attribute should be in cache
         var cachedAttr = cache?.GetOrAdd(method!, m => m.GetCustomAttribute<RetryAttribute>());
         Assert.NotNull(cachedAttr);
         Assert.Equal(3, cachedAttr!.MaxAttempts);
     }
 
     /// <summary>
-    /// Tests RegisterMessageFactory and CreateWorkerMessage.
+    /// Verifies a registered message factory is invoked to create worker messages.
     /// </summary>
     [Fact]
     public void RegisterMessageFactory_should_create_messages()
     {
-        // Arrange
         Func<Type, object, ParameterInfo[], object[], object> factory = (type, splitValue, parameters, otherArgs) =>
         {
             return new { Type = type.Name, Value = splitValue };
         };
 
-        // Act
         ResilientProxy<ITestService>.RegisterMessageFactory(factory);
 
-        // Use reflection to call CreateWorkerMessage
         var method = typeof(ResilientProxy<ITestService>).GetMethod("CreateWorkerMessage",
             BindingFlags.NonPublic | BindingFlags.Instance);
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
@@ -112,26 +97,22 @@ public class ResilientProxyCoreTests
 
         var result = method?.Invoke(resilientProxy, [typeof(string), "test", Array.Empty<ParameterInfo>(), Array.Empty<object>()]);
 
-        // Assert
         Assert.NotNull(result);
     }
 
     /// <summary>
-    /// Tests RegisterResultAggregator and AggregateResults.
+    /// Verifies a registered result aggregator is invoked to combine worker results.
     /// </summary>
     [Fact]
     public void RegisterResultAggregator_should_aggregate_results()
     {
-        // Arrange
         Func<object[], Type, Type, object> aggregator = (results, workerType, returnType) =>
         {
             return results.Length;
         };
 
-        // Act
         ResilientProxy<ITestService>.RegisterResultAggregator(aggregator);
 
-        // Use reflection to call AggregateResults
         var method = typeof(ResilientProxy<ITestService>).GetMethod("AggregateResults",
             BindingFlags.NonPublic | BindingFlags.Instance);
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
@@ -140,90 +121,97 @@ public class ResilientProxyCoreTests
 
         var result = method?.MakeGenericMethod(typeof(int))?.Invoke(resilientProxy, [new object[] { 1, 2, 3 }, typeof(string)]);
 
-        // Assert
         Assert.Equal(3, result);
     }
 
     /// <summary>
-    /// Tests that InvokeResilient throws for non-generic Task return type.
+    /// Verifies that <see cref="ResilientProxy{T}"/> throws for non-generic Task return types.
     /// </summary>
     [Fact]
     public void InvokeResilient_should_throw_for_non_generic_task()
     {
-        // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
         var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
         var method = typeof(ITestService).GetMethod(nameof(ITestService.SimpleMethod));
 
-        // Act & Assert - Create a delegate to call InvokeResilient with correct parameters
-        // InvokeResilient signature: object InvokeResilient(MethodInfo, object?[]?, RetryAttribute?, CircuitBreakerAttribute?, SupervisionAttribute?, FanOutAttribute?)
-        var paramTypes = new Type[] { typeof(MethodInfo), typeof(object[]), typeof(RetryAttribute), typeof(CircuitBreakerAttribute), typeof(SupervisionAttribute), typeof(FanOutAttribute) };
         var invokeMethod = typeof(ResilientProxy<ITestService>).GetMethod("InvokeResilient", BindingFlags.NonPublic | BindingFlags.Instance);
-        
-        // This should throw InvalidOperationException because SimpleMethod doesn't return Task<T>
+
         var ex = Assert.Throws<TargetInvocationException>(() =>
             invokeMethod?.Invoke(resilientProxy, [method, Array.Empty<object>(), null, null, null, null]));
         Assert.IsType<InvalidOperationException>(ex.InnerException);
     }
 
     /// <summary>
-    /// Tests WrapWithSupervision method.
+    /// Verifies that <see cref="ResilientProxy{T}"/> wraps an operation with supervision.
     /// </summary>
     [Fact]
     public async Task WrapWithSupervision_should_wrap_operation()
     {
-        // Arrange
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
         var resilientProxy = proxy as ResilientProxy<ITestService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
+        var config = ConfigurationFactory.ParseString(@"
+            akka.loglevel = ERROR
+            akka.stdout-loglevel = ERROR
+            akka.coordinated-shutdown.log-level = ERROR
+        ");
+        resilientProxy.ActorSystem = Akka.Actor.ActorSystem.Create("test-supervision-system", config);
+
         var supervisionAttr = new SupervisionAttribute();
 
-        // Use reflection to call WrapWithSupervision
         var method = typeof(ResilientProxy<ITestService>).GetMethod("WrapWithSupervision",
             BindingFlags.NonPublic | BindingFlags.Instance);
         var wrappedOp = (Func<Task<object>>)method?.Invoke(resilientProxy,
             [() => Task.FromResult<object>("test"), supervisionAttr])!;
 
-        // Act
         var result = await wrappedOp();
 
-        // Assert
         Assert.Equal("test", result);
+
+        await resilientProxy.ActorSystem.Terminate();
     }
 
     /// <summary>
-    /// Test interface for proxy testing.
+    /// Test service interface for proxy core tests.
     /// </summary>
     public interface ITestService
     {
         /// <summary>
-        /// Simple method for testing.
+        /// A simple synchronous method.
         /// </summary>
+        /// <returns>A string result.</returns>
         string SimpleMethod();
 
         /// <summary>
-        /// Async method with retry attribute.
+        /// An async method decorated with <see cref="RetryAttribute"/>.
         /// </summary>
+        /// <returns>A task that yields a string.</returns>
         [Retry(3, 100)]
         Task<string> GetDataAsync();
     }
 
     /// <summary>
-    /// Test implementation for proxy testing.
+    /// Test implementation of <see cref="ITestService"/>.
     /// </summary>
     private class TestService : ITestService
     {
         /// <summary>
-        /// Gets the number of times GetDataAsync was called.
+        /// Gets or sets the number of times methods have been called.
         /// </summary>
         public int CallCount { get; set; }
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Returns a simple string result.
+        /// </summary>
+        /// <returns>A string result.</returns>
         public string SimpleMethod() => "SimpleResult";
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Throws on the first two calls and succeeds on the third.
+        /// </summary>
+        /// <returns>A task that yields a success string.</returns>
         public Task<string> GetDataAsync()
         {
             CallCount++;

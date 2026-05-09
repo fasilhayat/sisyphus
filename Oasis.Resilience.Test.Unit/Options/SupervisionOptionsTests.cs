@@ -9,6 +9,9 @@ using Xunit;
 /// </summary>
 public class SupervisionOptionsTests
 {
+    /// <summary>
+    /// Verifies the default <see cref="SupervisionOptions.DefaultStrategy"/> is <see cref="SupervisionStrategy.RestartWithBackoff"/>.
+    /// </summary>
     [Fact]
     public void DefaultStrategy_should_be_RestartWithBackoff()
     {
@@ -19,6 +22,9 @@ public class SupervisionOptionsTests
         Assert.Equal(SupervisionStrategy.RestartWithBackoff, options.DefaultStrategy);
     }
 
+    /// <summary>
+    /// Verifies the default <see cref="SupervisionOptions.DefaultMaxRetries"/> is 5.
+    /// </summary>
     [Fact]
     public void DefaultMaxRetries_should_be_5()
     {
@@ -29,6 +35,9 @@ public class SupervisionOptionsTests
         Assert.Equal(5, options.DefaultMaxRetries);
     }
 
+    /// <summary>
+    /// Verifies the default <see cref="SupervisionOptions.DefaultBackoffMinMs"/> is 2000.
+    /// </summary>
     [Fact]
     public void DefaultBackoffMinMs_should_be_2000()
     {
@@ -39,6 +48,9 @@ public class SupervisionOptionsTests
         Assert.Equal(2000, options.DefaultBackoffMinMs);
     }
 
+    /// <summary>
+    /// Verifies the default <see cref="SupervisionOptions.DefaultBackoffMaxMs"/> is 30000.
+    /// </summary>
     [Fact]
     public void DefaultBackoffMaxMs_should_be_30000()
     {
@@ -49,6 +61,9 @@ public class SupervisionOptionsTests
         Assert.Equal(30000, options.DefaultBackoffMaxMs);
     }
 
+    /// <summary>
+    /// Verifies the default <see cref="SupervisionOptions.DefaultRandomFactor"/> is 0.2.
+    /// </summary>
     [Fact]
     public void DefaultRandomFactor_should_be_0_2()
     {
@@ -59,6 +74,9 @@ public class SupervisionOptionsTests
         Assert.Equal(0.2, options.DefaultRandomFactor);
     }
 
+    /// <summary>
+    /// Verifies <see cref="SupervisionOptions.DefaultStrategy"/> can be set to a custom value.
+    /// </summary>
     [Fact]
     public void Should_allow_setting_DefaultStrategy()
     {
@@ -72,6 +90,9 @@ public class SupervisionOptionsTests
         Assert.Equal(SupervisionStrategy.Restart, options.DefaultStrategy);
     }
 
+    /// <summary>
+    /// Verifies all properties of <see cref="SupervisionOptions"/> can be set simultaneously.
+    /// </summary>
     [Fact]
     public void Should_allow_setting_all_properties()
     {

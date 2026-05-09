@@ -7,15 +7,19 @@ using Oasis.Resilience.Proxies;
 using System.Reflection;
 
 /// <summary>
-/// Tests for ResilientProxy with circuit breaker attribute.
+/// Unit tests for circuit breaker behavior in <see cref="ResilientProxy{T}"/>.
 /// </summary>
 public class ResilientProxyCircuitBreakerTests : ProxyTestBase
 {
+    /// <summary>
+    /// The actor system used by the proxy.
+    /// </summary>
     private ActorSystem? _actorSystem;
 
     /// <summary>
-    /// Creates a proxy with actor system for fan-out testing.
+    /// Creates a proxy with a fan-out service and actor system configured.
     /// </summary>
+    /// <returns>The created proxy instance.</returns>
     private object CreateFanOutProxy()
     {
         _actorSystem = CreateActorSystem();
@@ -30,35 +34,33 @@ public class ResilientProxyCircuitBreakerTests : ProxyTestBase
         return proxy!;
     }
 
-    /// <inheritdoc/>
-    protected new void Dispose()
-    {
-        base.Dispose();
-    }
-
     /// <summary>
-    /// Test interface for proxy testing.
+    /// Test service interface for circuit breaker proxy tests.
     /// </summary>
     public interface ITestService
     {
         /// <summary>
-        /// Async method with circuit breaker attribute.
+        /// An async method decorated with <see cref="CircuitBreakerAttribute"/>.
         /// </summary>
+        /// <returns>A task that yields a string.</returns>
         [CircuitBreaker(5, 1000)]
         Task<string> GetDataAsync();
     }
 
     /// <summary>
-    /// Test implementation for ITestService.
+    /// Test implementation of <see cref="ITestService"/>.
     /// </summary>
     private class TestService : ITestService
     {
         /// <summary>
-        /// Gets the number of times GetDataAsync was called.
+        /// Gets or sets the number of times methods have been called.
         /// </summary>
         public int CallCount { get; set; }
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Throws on the first two calls and succeeds on the third.
+        /// </summary>
+        /// <returns>A task that yields a success string.</returns>
         public Task<string> GetDataAsync()
         {
             CallCount++;

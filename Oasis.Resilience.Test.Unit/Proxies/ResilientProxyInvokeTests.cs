@@ -2,6 +2,7 @@ namespace Oasis.Resilience.Test.Unit.Proxies;
 
 using Akka.Actor;
 using Akka.Configuration;
+using Microsoft.Extensions.Logging;
 using Oasis.Resilience;
 using Oasis.Resilience.Actors;
 using Oasis.Resilience.Attributes;
@@ -10,17 +11,28 @@ using System.Reflection;
 using Xunit;
 
 /// <summary>
-/// Tests for ResilientProxy invoke paths including retry, circuit breaker, supervision, and fan-out.
+/// Unit tests for the invoke behavior of <see cref="ResilientProxy{T}"/>.
 /// </summary>
 public class ResilientProxyInvokeTests : ProxyTestBase
 {
+    /// <summary>
+    /// The actor system used by the proxy.
+    /// </summary>
     private ActorSystem? _actorSystem;
+    /// <summary>
+    /// The retry actor reference.
+    /// </summary>
     private IActorRef? _retryActor;
+    /// <summary>
+    /// The circuit breaker actor reference.
+    /// </summary>
     private IActorRef? _circuitBreakerActor;
 
     /// <summary>
-    /// Creates a proxy with actor references for testing resilience paths.
+    /// Creates a proxy with retry and circuit breaker actors configured.
     /// </summary>
+    /// <param name="decorated">The decorated <see cref="TestService"/> instance.</param>
+    /// <returns>The created proxy instance.</returns>
     private object CreateProxyWithActors(out ITestService decorated)
     {
         var config = ConfigurationFactory.ParseString(@"
@@ -28,9 +40,9 @@ public class ResilientProxyInvokeTests : ProxyTestBase
             akka.stdout-loglevel = ERROR
         ");
         _actorSystem = CreateActorSystem($"test-system-{Guid.NewGuid()}");
-        _retryActor = _actorSystem.ActorOf(Props.Create(() => new RetryActor(new RetryOptions())), "retry");
+        _retryActor = _actorSystem.ActorOf(Props.Create(() => new RetryActor(new RetryOptions(), null)), "retry");
         _circuitBreakerActor = _actorSystem.ActorOf(
-            Props.Create(() => new CircuitBreakerActor(new RetryOptions())), "circuit-breaker");
+            Props.Create(() => new CircuitBreakerActor(LogLevel.None, null)), "circuit-breaker");
 
         var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
         var resilientProxy = proxy as ResilientProxy<ITestService> ??
@@ -46,35 +58,30 @@ public class ResilientProxyInvokeTests : ProxyTestBase
     }
 
     /// <summary>
-    /// Tests that retry attribute causes method to be invoked via the retry actor.
+    /// Verifies that the retry path is used when a method is decorated with <see cref="RetryAttribute"/>.
     /// </summary>
     [Fact]
     public async Task InvokeGeneric_should_use_retry_when_retry_attribute_present()
     {
-        // Arrange
         var proxy = CreateProxyWithActors(out var decorated);
         var testService = (TestService)decorated;
-        testService.CallCount = 2; // Skip first 2 failures
+        testService.CallCount = 2;
 
-        // Cast to interface to access GetDataAsync
         var serviceProxy = (ITestService)proxy;
 
-        // Act
         var result = await serviceProxy.GetDataAsync();
 
-        // Assert
         Assert.Equal("success", result);
         Assert.True(testService.CallCount >= 3);
     }
 
     /// <summary>
-    /// Tests that supervision attribute without retry/circuit breaker executes the operation.
+    /// Verifies that supervision-only methods work without retry or circuit breaker actors.
     /// </summary>
     [Fact]
     public async Task InvokeGeneric_should_handle_supervision_only()
     {
-        // Arrange
-        _actorSystem = ActorSystem.Create($"test-system-{Guid.NewGuid()}");
+        _actorSystem = CreateActorSystem();
 
         var proxy = DispatchProxy.Create<ITestService2, ResilientProxy<ITestService2>>();
         var resilientProxy = proxy as ResilientProxy<ITestService2> ??
@@ -84,33 +91,28 @@ public class ResilientProxyInvokeTests : ProxyTestBase
         resilientProxy.DecoratedInstance = decorated;
         resilientProxy.ActorSystem = _actorSystem;
 
-        // Act
         var result = await proxy.SupervisedOnlyMethod();
 
-        // Assert
         Assert.Equal("SupervisedResult", result);
     }
 
     /// <summary>
-    /// Tests that non-generic Task return type throws InvalidOperationException.
+    /// Verifies that <see cref="ResilientProxy{T}"/> throws for non-generic Task return types.
     /// </summary>
     [Fact]
     public void InvokeGeneric_should_throw_for_non_generic_task()
     {
-        // Arrange
         var proxy = DispatchProxy.Create<INonGenericService, ResilientProxy<INonGenericService>>();
         var resilientProxy = proxy as ResilientProxy<INonGenericService> ??
             throw new InvalidOperationException("Failed to create proxy");
 
         resilientProxy.DecoratedInstance = new NonGenericService();
 
-        // Use reflection to call InvokeResilient directly (which calls InvokeGeneric internally)
         var method = typeof(ResilientProxy<INonGenericService>).GetMethod("InvokeResilient",
             BindingFlags.NonPublic | BindingFlags.Instance);
 
         var doWorkMethod = typeof(INonGenericService).GetMethod(nameof(INonGenericService.DoWork));
 
-        // Act & Assert
         var ex = Assert.Throws<TargetInvocationException>(() =>
             method!.Invoke(resilientProxy, [doWorkMethod!, Array.Empty<object>(), null, null, null, null]));
 
@@ -119,25 +121,24 @@ public class ResilientProxyInvokeTests : ProxyTestBase
     }
 
     /// <summary>
-    /// Tests the WrapWithSupervision method.
+    /// Verifies that <see cref="ResilientProxy{T}"/> creates a supervised actor and returns the result.
     /// </summary>
     [Fact]
-    public async Task WrapWithSupervision_should_wrap_operation()
+    public async Task WrapWithSupervision_should_create_supervised_actor()
     {
-        // Arrange
-        _actorSystem = CreateActorSystem($"test-system-{Guid.NewGuid()}");
+        _actorSystem = CreateActorSystem();
 
         var proxy = DispatchProxy.Create<ITestService2, ResilientProxy<ITestService2>>();
         var resilientProxy = proxy as ResilientProxy<ITestService2> ??
             throw new InvalidOperationException("Failed to create proxy");
 
-        // Use reflection to call WrapWithSupervision
+        resilientProxy.ActorSystem = _actorSystem;
+
         var method = typeof(ResilientProxy<ITestService2>).GetMethod("WrapWithSupervision",
             BindingFlags.NonPublic | BindingFlags.Instance);
 
         var supervisionAttr = new SupervisionAttribute(SupervisionStrategy.Restart);
 
-        // Act
         var wrappedOp = method!.Invoke(resilientProxy,
             [new Func<Task<object>>(() => Task.FromResult<object>("test")), supervisionAttr])
             as Func<Task<object>>;
@@ -145,62 +146,61 @@ public class ResilientProxyInvokeTests : ProxyTestBase
         Assert.NotNull(wrappedOp);
         var result = await wrappedOp();
 
-        // Assert
         Assert.Equal("test", result);
     }
 
-    /// <inheritdoc/>
-    protected new void Dispose()
-    {
-        base.Dispose();
-    }
-
     /// <summary>
-    /// Test interface for proxy testing with retry attribute.
+    /// Test service interface for retry invocation tests.
     /// </summary>
     public interface ITestService
     {
         /// <summary>
-        /// Async method with retry attribute.
+        /// An async method decorated with <see cref="RetryAttribute"/>.
         /// </summary>
+        /// <returns>A task that yields a string.</returns>
         [Retry(3, 10)]
         Task<string> GetDataAsync();
     }
 
     /// <summary>
-    /// Test interface for supervision-only testing.
+    /// Test service interface for supervision invocation tests.
     /// </summary>
     public interface ITestService2
     {
         /// <summary>
-        /// Method with supervision attribute only.
+        /// An async method decorated with <see cref="SupervisionAttribute"/>.
         /// </summary>
+        /// <returns>A task that yields a string.</returns>
         [Supervision(SupervisionStrategy.Restart)]
         Task<string> SupervisedOnlyMethod();
     }
 
     /// <summary>
-    /// Test interface for non-generic Task testing.
+    /// Test service interface for non-generic Task tests.
     /// </summary>
     public interface INonGenericService
     {
         /// <summary>
-        /// Method returning non-generic Task.
+        /// A non-generic Task method.
         /// </summary>
+        /// <returns>A task representing the asynchronous operation.</returns>
         Task DoWork();
     }
 
     /// <summary>
-    /// Test implementation for ITestService.
+    /// Test implementation of <see cref="ITestService"/>.
     /// </summary>
     private class TestService : ITestService
     {
         /// <summary>
-        /// Gets the number of times GetDataAsync was called.
+        /// Gets or sets the number of times methods have been called.
         /// </summary>
         public int CallCount { get; set; }
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Throws on the first two calls and succeeds on the third.
+        /// </summary>
+        /// <returns>A task that yields a success string.</returns>
         public Task<string> GetDataAsync()
         {
             CallCount++;
@@ -211,11 +211,14 @@ public class ResilientProxyInvokeTests : ProxyTestBase
     }
 
     /// <summary>
-    /// Test implementation for ITestService2.
+    /// Test implementation of <see cref="ITestService2"/>.
     /// </summary>
     private class TestService2 : ITestService2
     {
-        /// <inheritdoc/>
+        /// <summary>
+        /// Returns a supervised result for supervision invocation tests.
+        /// </summary>
+        /// <returns>A task that yields a supervised result string.</returns>
         public Task<string> SupervisedOnlyMethod()
         {
             return Task.FromResult("SupervisedResult");
@@ -223,11 +226,14 @@ public class ResilientProxyInvokeTests : ProxyTestBase
     }
 
     /// <summary>
-    /// Test implementation for INonGenericService.
+    /// Test implementation of <see cref="INonGenericService"/>.
     /// </summary>
     private class NonGenericService : INonGenericService
     {
-        /// <inheritdoc/>
+        /// <summary>
+        /// Returns a completed task for non-generic Task tests.
+        /// </summary>
+        /// <returns>A completed task.</returns>
         public Task DoWork() => Task.CompletedTask;
     }
 }

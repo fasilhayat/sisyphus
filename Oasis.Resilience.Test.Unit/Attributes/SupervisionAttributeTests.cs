@@ -8,6 +8,9 @@ using Xunit;
 /// </summary>
 public class SupervisionAttributeTests
 {
+    /// <summary>
+    /// Verifies the default property values of <see cref="SupervisionAttribute"/>.
+    /// </summary>
     [Fact]
     public void Should_have_default_values()
     {
@@ -22,6 +25,9 @@ public class SupervisionAttributeTests
         Assert.Equal(0.2, attr.RandomFactor);
     }
 
+    /// <summary>
+    /// Verifies custom values are properly accepted by <see cref="SupervisionAttribute"/>.
+    /// </summary>
     [Fact]
     public void Should_accept_custom_values()
     {
@@ -41,6 +47,9 @@ public class SupervisionAttributeTests
         Assert.Equal(0.5, attr.RandomFactor);
     }
 
+    /// <summary>
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for invalid max retries values.
+    /// </summary>
     [Fact]
     public void Should_throw_for_invalid_maxRetries()
     {
@@ -49,6 +58,9 @@ public class SupervisionAttributeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new SupervisionAttribute(maxRetries: -1));
     }
 
+    /// <summary>
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative backoff minimum.
+    /// </summary>
     [Fact]
     public void Should_throw_for_negative_backoffMinMs()
     {
@@ -56,6 +68,9 @@ public class SupervisionAttributeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new SupervisionAttribute(backoffMinMs: -1));
     }
 
+    /// <summary>
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative backoff maximum.
+    /// </summary>
     [Fact]
     public void Should_throw_for_negative_backoffMaxMs()
     {
@@ -63,6 +78,9 @@ public class SupervisionAttributeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new SupervisionAttribute(backoffMaxMs: -1));
     }
 
+    /// <summary>
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative random factor.
+    /// </summary>
     [Fact]
     public void Should_throw_for_negative_randomFactor()
     {
@@ -70,6 +88,9 @@ public class SupervisionAttributeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new SupervisionAttribute(randomFactor: -0.1));
     }
 
+    /// <summary>
+    /// Verifies all supervision strategies are accepted by <see cref="SupervisionAttribute"/>.
+    /// </summary>
     [Fact]
     public void Should_allow_all_strategies()
     {

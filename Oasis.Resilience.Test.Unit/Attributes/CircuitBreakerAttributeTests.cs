@@ -8,6 +8,9 @@ using Xunit;
 /// </summary>
 public class CircuitBreakerAttributeTests
 {
+    /// <summary>
+    /// Verifies the default property values of <see cref="CircuitBreakerAttribute"/>.
+    /// </summary>
     [Fact]
     public void Should_have_default_values()
     {
@@ -20,6 +23,9 @@ public class CircuitBreakerAttributeTests
         Assert.Equal(1, attr.MaxConcurrentCalls);
     }
 
+    /// <summary>
+    /// Verifies custom values are properly accepted by <see cref="CircuitBreakerAttribute"/>.
+    /// </summary>
     [Fact]
     public void Should_accept_custom_values()
     {
@@ -35,6 +41,9 @@ public class CircuitBreakerAttributeTests
         Assert.Equal(2, attr.MaxConcurrentCalls);
     }
 
+    /// <summary>
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for invalid failure threshold values.
+    /// </summary>
     [Fact]
     public void Should_throw_for_invalid_failureThreshold()
     {
@@ -43,6 +52,9 @@ public class CircuitBreakerAttributeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new CircuitBreakerAttribute(failureThreshold: -1));
     }
 
+    /// <summary>
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative reset timeout.
+    /// </summary>
     [Fact]
     public void Should_throw_for_negative_resetTimeout()
     {
@@ -50,6 +62,9 @@ public class CircuitBreakerAttributeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new CircuitBreakerAttribute(resetTimeout: -1));
     }
 
+    /// <summary>
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for invalid max concurrent calls values.
+    /// </summary>
     [Fact]
     public void Should_throw_for_invalid_maxConcurrentCalls()
     {
@@ -58,6 +73,9 @@ public class CircuitBreakerAttributeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new CircuitBreakerAttribute(maxConcurrentCalls: -1));
     }
 
+    /// <summary>
+    /// Verifies a failure threshold of 1 is accepted by <see cref="CircuitBreakerAttribute"/>.
+    /// </summary>
     [Fact]
     public void Should_allow_failureThreshold_of_1()
     {
@@ -68,6 +86,9 @@ public class CircuitBreakerAttributeTests
         Assert.Equal(1, attr.FailureThreshold);
     }
 
+    /// <summary>
+    /// Verifies a reset timeout of zero is accepted by <see cref="CircuitBreakerAttribute"/>.
+    /// </summary>
     [Fact]
     public void Should_allow_zero_resetTimeout()
     {

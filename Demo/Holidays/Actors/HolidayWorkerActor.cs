@@ -2,6 +2,9 @@ namespace Demo.Holidays.Actors;
 
 using Akka.Actor;
 
+/// <summary>
+/// An Akka.NET actor that processes a single year's holiday data for a given country.
+/// </summary>
 public sealed class HolidayWorkerActor : ReceiveActor
 {
     private readonly HttpClient _client = new()
@@ -9,6 +12,9 @@ public sealed class HolidayWorkerActor : ReceiveActor
         BaseAddress = new Uri("https://holidays.api")
     };
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="HolidayWorkerActor"/> class.
+    /// </summary>
     public HolidayWorkerActor()
     {
         ReceiveAsync<ProcessYear>(async msg =>
@@ -27,6 +33,17 @@ public sealed class HolidayWorkerActor : ReceiveActor
         });
     }
 
+    /// <summary>
+    /// Message to process a specific year and country.
+    /// </summary>
+    /// <param name="Year">The year to process.</param>
+    /// <param name="Country">The country code.</param>
     public sealed record ProcessYear(int Year, string Country);
+
+    /// <summary>
+    /// Response message containing the processed year and holiday content.
+    /// </summary>
+    /// <param name="Year">The year that was processed.</param>
+    /// <param name="Content">The holiday data content.</param>
     public sealed record YearProcessed(int Year, string Content);
 }

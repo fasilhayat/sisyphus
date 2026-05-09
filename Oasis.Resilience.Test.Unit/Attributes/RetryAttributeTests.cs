@@ -8,6 +8,9 @@ using Xunit;
 /// </summary>
 public class RetryAttributeTests
 {
+    /// <summary>
+    /// Verifies the default property values of <see cref="RetryAttribute"/>.
+    /// </summary>
     [Fact]
     public void Should_have_default_values()
     {
@@ -19,6 +22,9 @@ public class RetryAttributeTests
         Assert.Equal(2000, attr.InitialDelay);
     }
 
+    /// <summary>
+    /// Verifies custom values are properly accepted by <see cref="RetryAttribute"/>.
+    /// </summary>
     [Fact]
     public void Should_accept_custom_values()
     {
@@ -30,6 +36,9 @@ public class RetryAttributeTests
         Assert.Equal(500, attr.InitialDelay);
     }
 
+    /// <summary>
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for invalid max attempts values.
+    /// </summary>
     [Fact]
     public void Should_throw_for_invalid_maxAttempts()
     {
@@ -38,6 +47,9 @@ public class RetryAttributeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new RetryAttribute(maxAttempts: -1));
     }
 
+    /// <summary>
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative initial delay.
+    /// </summary>
     [Fact]
     public void Should_throw_for_negative_initialDelay()
     {
@@ -45,6 +57,9 @@ public class RetryAttributeTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new RetryAttribute(initialDelay: -1));
     }
 
+    /// <summary>
+    /// Verifies a max attempts value of 1 is accepted by <see cref="RetryAttribute"/>.
+    /// </summary>
     [Fact]
     public void Should_allow_maxAttempts_of_1()
     {
@@ -55,6 +70,9 @@ public class RetryAttributeTests
         Assert.Equal(1, attr.MaxAttempts);
     }
 
+    /// <summary>
+    /// Verifies an initial delay of zero is accepted by <see cref="RetryAttribute"/>.
+    /// </summary>
     [Fact]
     public void Should_allow_zero_initialDelay()
     {

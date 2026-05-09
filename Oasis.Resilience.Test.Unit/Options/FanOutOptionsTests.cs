@@ -8,6 +8,9 @@ using Xunit;
 /// </summary>
 public class FanOutOptionsTests
 {
+    /// <summary>
+    /// Verifies the default <see cref="FanOutOptions.DefaultMaxWorkers"/> is 5.
+    /// </summary>
     [Fact]
     public void DefaultMaxWorkers_should_be_5()
     {
@@ -18,6 +21,9 @@ public class FanOutOptionsTests
         Assert.Equal(5, options.DefaultMaxWorkers);
     }
 
+    /// <summary>
+    /// Verifies <see cref="FanOutOptions.DefaultMaxWorkers"/> can be set to a custom value.
+    /// </summary>
     [Fact]
     public void Should_allow_setting_DefaultMaxWorkers()
     {
@@ -31,6 +37,9 @@ public class FanOutOptionsTests
         Assert.Equal(10, options.DefaultMaxWorkers);
     }
 
+    /// <summary>
+    /// Verifies <see cref="FanOutOptions.DefaultMaxWorkers"/> can be set to 1.
+    /// </summary>
     [Fact]
     public void Should_allow_setting_MaxWorkers_to_1()
     {
@@ -44,6 +53,9 @@ public class FanOutOptionsTests
         Assert.Equal(1, options.DefaultMaxWorkers);
     }
 
+    /// <summary>
+    /// Verifies <see cref="FanOutOptions.DefaultMaxWorkers"/> can be set to 100.
+    /// </summary>
     [Fact]
     public void Should_allow_setting_MaxWorkers_to_100()
     {

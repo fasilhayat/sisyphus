@@ -4,88 +4,110 @@ using Akka.Actor;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
-/// An Akka.NET actor that executes operations with configurable retry logic and exponential backoff for resilience.
+/// An Akka.NET actor that executes operations with retry logic and exponential backoff.
 /// </summary>
-/// <remarks>
-/// Handles execution requests by retrying failed operations up to a specified number of attempts,
-/// applying an exponential delay between retries. Reports success or failure to the sender.
-/// </remarks>
-public sealed class RetryActor : ReceiveActor
+public sealed class RetryActor : ReceiveActor, IWithTimers
 {
-    /// <summary>
-    /// Provides resilience configuration settings used by the actor, including whether
-    /// verbose retry diagnostics should be written during execution.
-    /// </summary>
     private readonly RetryOptions _options;
+    private readonly ILogger<RetryActor>? _logger;
 
     /// <summary>
-    /// Represents an executable operation with retry logic and configurable delay between attempts.
+    /// Instructs the actor to execute an operation with retry capability.
     /// </summary>
-    /// <param name="Operation">A delegate representing the asynchronous operation to execute.</param>
-    /// <param name="MaxAttempts">The maximum number of retry attempts.</param>
-    /// <param name="InitialDelay">The initial delay between retry attempts.</param>
+    /// <param name="Operation">The operation to execute.</param>
+    /// <param name="MaxAttempts">Maximum number of attempts before giving up.</param>
+    /// <param name="InitialDelay">Initial delay before the first retry (doubles each attempt).</param>
     public sealed record Execute(Func<Task<object>> Operation, int MaxAttempts, TimeSpan InitialDelay);
 
+    private sealed record ExecuteAttempt(
+        Func<Task<object>> Operation, int MaxAttempts, TimeSpan InitialDelay, int Attempt, IActorRef OriginalSender);
+
+    private sealed record ScheduleRetry(
+        Func<Task<object>> Operation, int MaxAttempts, TimeSpan InitialDelay, int Attempt, IActorRef OriginalSender);
+
     /// <summary>
-    /// Initializes a new instance of the RetryActor class and sets up message handling with retry logic.
+    /// Gets or sets the timer scheduler used for scheduling delayed retries.
     /// </summary>
-    /// <param name="options">The resilience configuration options.</param>
-    public RetryActor(RetryOptions options)
+    public ITimerScheduler? Timers { get; set; }
+
+    private int _timerCounter;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RetryActor"/> class.
+    /// </summary>
+    /// <param name="options">Retry configuration options.</param>
+    /// <param name="logger">Optional logger instance.</param>
+    public RetryActor(RetryOptions options, ILogger<RetryActor>? logger = null)
     {
         _options = options;
-        ReceiveAsync<Execute>(ExecuteWithRetry);
+        _logger = logger;
+        ReceiveAsync<Execute>(HandleExecute);
+        Receive<ScheduleRetry>(HandleScheduleRetry);
     }
 
-    /// <summary>
-    /// Executes the specified operation with retry logic, sending the result or failure to the sender.
-    /// </summary>
-    /// <param name="msg">The execution parameters, including the operation to perform, maximum attempts, and initial delay.</param>
-    /// <returns>
-    /// A task that represents the asynchronous execution with retry logic.
-    /// </returns>
-    private async Task ExecuteWithRetry(Execute msg)
+    /// <summary>Handles an execute request by starting the first attempt.</summary>
+    private async Task HandleExecute(Execute msg)
     {
-        Exception? lastException = null;
+        await ExecuteAttemptInternal(msg.Operation, msg.MaxAttempts, msg.InitialDelay, attempt: 1, Sender);
+    }
 
-        for (var attempt = 1; attempt <= msg.MaxAttempts; attempt++)
+    /// <summary>Executes a single attempt and schedules a retry on failure if attempts remain.</summary>
+    private async Task ExecuteAttemptInternal(
+        Func<Task<object>> operation, int maxAttempts, TimeSpan initialDelay, int attempt, IActorRef originalSender)
+    {
+        try
         {
-            try
-            {
-                Log($"Attempt {attempt} executing...");
-                var result = await msg.Operation();
-                Log($"Success on attempt {attempt}");
+            LogDebug("Attempt {Attempt} executing...", attempt);
+            var result = await operation();
+            LogDebug("Success on attempt {Attempt}", attempt);
+            originalSender.Tell(result);
+        }
+        catch (Exception ex)
+        {
+            LogDebug("Attempt {Attempt} failed: {Message}", attempt, ex.Message);
 
-                Sender.Tell(result);
+            if (attempt >= maxAttempts)
+            {
+                originalSender.Tell(new Status.Failure(ex));
                 return;
             }
-            catch (Exception ex)
-            {
-                lastException = ex;
-                Log($"Attempt {attempt} failed: {ex.Message}");
 
-                if (attempt == msg.MaxAttempts)
-                    break;
+            var delay = TimeSpan.FromMilliseconds(initialDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
 
-                var delay = TimeSpan.FromMilliseconds(msg.InitialDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
+            LogDebug("Retrying in {Delay}s...", delay.TotalSeconds);
 
-                Log($"Retrying in {delay.TotalSeconds}s...");
-                await Task.Delay(delay);
-            }
+            _timerCounter++;
+            var timerKey = $"retry-{_timerCounter}-{attempt}";
+            Timers!.StartSingleTimer(
+                timerKey,
+                new ScheduleRetry(operation, maxAttempts, initialDelay, attempt + 1, originalSender),
+                delay);
         }
-
-        //Log("Max retry attempts reached. Failing.");
-        Sender.Tell(new Status.Failure(lastException!));
     }
 
-    /// <summary>
-    /// Logs a message to the console when the log level is set to debug.
-    /// </summary>
-    /// <param name="message">The message to write to the console.</param>
-    private void Log(string message)
+    /// <summary>Handles a scheduled retry by executing the next attempt.</summary>
+    private void HandleScheduleRetry(ScheduleRetry msg)
     {
-        if (_options.LogLevel > LogLevel.Debug)
-            return;
+        ExecuteAttemptAsync(msg.Operation, msg.MaxAttempts, msg.InitialDelay, msg.Attempt, msg.OriginalSender);
+    }
 
-        Console.WriteLine($"[Resilience] {message}");
+    /// <summary>Fire-forget wrapper that executes an attempt asynchronously.</summary>
+    private async void ExecuteAttemptAsync(
+        Func<Task<object>> operation, int maxAttempts, TimeSpan initialDelay, int attempt, IActorRef originalSender)
+    {
+        await ExecuteAttemptInternal(operation, maxAttempts, initialDelay, attempt, originalSender);
+    }
+
+    /// <summary>Logs a debug message via the logger or writes to the console.</summary>
+    private void LogDebug(string message, params object?[] args)
+    {
+        if (_logger is not null)
+        {
+            _logger.LogDebug(message, args);
+        }
+        else if (_options.LogLevel <= LogLevel.Debug)
+        {
+            Console.WriteLine($"[Resilience] {string.Format(message, args)}");
+        }
     }
 }
