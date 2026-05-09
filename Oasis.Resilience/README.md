@@ -15,16 +15,16 @@ dotnet add package Oasis.Resilience
 ```csharp
 public interface IMyService
 {
-    [Retry(maxAttempts: 3, initialDelay: 1000)]
     Task<string> GetDataAsync();
 }
 ```
 
-### 2. Implement and register
+### 2. Implement the service with resilience attributes
 
 ```csharp
 public class MyService : IMyService
 {
+    [Retry(maxAttempts: 3, initialDelay: 1000)]
     public async Task<string> GetDataAsync() { ... }
 }
 
@@ -108,8 +108,11 @@ All configuration delegates are optional. The values you set become the global d
 Re-executes a failed method with exponential backoff. Applies to transient failures such as network timeouts or temporary service unavailability.
 
 ```csharp
-[Retry(maxAttempts: 5, initialDelay: 2000)]
-public async Task<string> FetchDataAsync()
+public class MyService : IMyService
+{
+    [Retry(maxAttempts: 5, initialDelay: 2000)]
+    public async Task<string> FetchDataAsync() { ... }
+}
 ```
 
 **Parameters**
@@ -135,8 +138,11 @@ public async Task<string> FetchDataAsync()
 Prevents cascading failures by opening the circuit after a configurable number of consecutive failures, allowing the system to recover.
 
 ```csharp
-[CircuitBreaker(failureThreshold: 3, resetTimeout: 10000, maxConcurrentCalls: 2)]
-public async Task<string> GetInventoryAsync()
+public class InventoryService : IInventoryService
+{
+    [CircuitBreaker(failureThreshold: 3, resetTimeout: 10000, maxConcurrentCalls: 2)]
+    public async Task<string> GetInventoryAsync() { ... }
+}
 ```
 
 **Parameters**
@@ -172,9 +178,12 @@ The circuit breaker cycles through three states:
 **Combining with `[Retry]`**: Use both attributes on the same method to handle transient errors with retries while preventing cascade failures via the circuit breaker. Retry is evaluated first — only after retries are exhausted does the failure count toward the circuit breaker threshold.
 
 ```csharp
-[CircuitBreaker(failureThreshold: 3, resetTimeout: 10000, maxConcurrentCalls: 2)]
-[Retry(maxAttempts: 4, initialDelay: 1000)]
-public async Task<string> GetInventoryAsync()
+public class InventoryService : IInventoryService
+{
+    [CircuitBreaker(failureThreshold: 3, resetTimeout: 10000, maxConcurrentCalls: 2)]
+    [Retry(maxAttempts: 4, initialDelay: 1000)]
+    public async Task<string> GetInventoryAsync() { ... }
+}
 ```
 
 ---
@@ -184,8 +193,11 @@ public async Task<string> GetInventoryAsync()
 Wraps method execution in an Akka.NET supervised actor, providing fault-tolerant execution with configurable failure strategies.
 
 ```csharp
-[Supervision(strategy: SupervisionStrategy.RestartWithBackoff, maxRetries: 5)]
-public async Task<string> ProcessDataAsync()
+public class DataProcessor : IDataProcessor
+{
+    [Supervision(strategy: SupervisionStrategy.RestartWithBackoff, maxRetries: 5)]
+    public async Task<string> ProcessDataAsync() { ... }
+}
 ```
 
 **Parameters**
@@ -223,8 +235,11 @@ public async Task<string> ProcessDataAsync()
 Splits a collection parameter and distributes work items across multiple worker actors for parallel processing.
 
 ```csharp
-[FanOut(workerActorType: typeof(MyWorkerActor), splitParameterName: "items", maxWorkers: 5)]
-public async Task<List<Result>> ProcessBatchAsync(int[] items, string category)
+public class BatchProcessor : IBatchProcessor
+{
+    [FanOut(workerActorType: typeof(MyWorkerActor), splitParameterName: "items", maxWorkers: 5)]
+    public async Task<List<Result>> ProcessBatchAsync(int[] items, string category) { ... }
+}
 ```
 
 **Parameters**
@@ -302,9 +317,12 @@ Func<object[] results, Type workerType, Type returnType, object>
 5. Fan-out can be combined with `[Supervision]` so that individual worker failures trigger the configured supervision strategy.
 
 ```csharp
-[FanOut(workerActorType: typeof(HolidayWorkerActor), splitParameterName: "years", maxWorkers: 5)]
-[Supervision(strategy: SupervisionStrategy.RestartWithBackoff)]
-public async Task<Dictionary<int, string>> GetHolidaysForYearsAsync(int[] years, string country)
+public class HolidayService : IHolidayService
+{
+    [FanOut(workerActorType: typeof(HolidayWorkerActor), splitParameterName: "years", maxWorkers: 5)]
+    [Supervision(strategy: SupervisionStrategy.RestartWithBackoff)]
+    public async Task<Dictionary<int, string>> GetHolidaysForYearsAsync(int[] years, string country) { ... }
+}
 ```
 
 ---
@@ -319,9 +337,12 @@ Attributes can be stacked on the same method. The framework evaluates them in th
 4. **Retry** — retries on failure with exponential backoff
 
 ```csharp
-[CircuitBreaker(failureThreshold: 3, resetTimeout: 10000)]
-[Retry(maxAttempts: 4, initialDelay: 1000)]
-public async Task<string> GetInventoryAsync()
+public class InventoryService : IInventoryService
+{
+    [CircuitBreaker(failureThreshold: 3, resetTimeout: 10000)]
+    [Retry(maxAttempts: 4, initialDelay: 1000)]
+    public async Task<string> GetInventoryAsync() { ... }
+}
 ```
 
 In this combination, retry handles transient failures up to 4 attempts. If the service remains unavailable, the circuit breaker opens after 3 such failures, preventing further calls for 10 seconds.
