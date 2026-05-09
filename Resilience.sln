@@ -13,8 +13,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Demo", "Demo\Demo.csproj", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Oasis.Resilience.Test.Unit", "Oasis.Resilience.Test.Unit\Oasis.Resilience.Test.Unit.csproj", "{6ABE27BC-877E-4D1D-88DA-C8116073E8BF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DemoWithNuGet", "DemoWithNuGet\DemoWithNuGet.csproj", "{908D5979-1BC0-45CD-9A90-64B57600B67C}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -85,18 +83,6 @@ Global
 		{6ABE27BC-877E-4D1D-88DA-C8116073E8BF}.Release|x64.Build.0 = Release|Any CPU
 		{6ABE27BC-877E-4D1D-88DA-C8116073E8BF}.Release|x86.ActiveCfg = Release|Any CPU
 		{6ABE27BC-877E-4D1D-88DA-C8116073E8BF}.Release|x86.Build.0 = Release|Any CPU
-		{908D5979-1BC0-45CD-9A90-64B57600B67C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{908D5979-1BC0-45CD-9A90-64B57600B67C}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{908D5979-1BC0-45CD-9A90-64B57600B67C}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{908D5979-1BC0-45CD-9A90-64B57600B67C}.Debug|x64.Build.0 = Debug|Any CPU
-		{908D5979-1BC0-45CD-9A90-64B57600B67C}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{908D5979-1BC0-45CD-9A90-64B57600B67C}.Debug|x86.Build.0 = Debug|Any CPU
-		{908D5979-1BC0-45CD-9A90-64B57600B67C}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{908D5979-1BC0-45CD-9A90-64B57600B67C}.Release|Any CPU.Build.0 = Release|Any CPU
-		{908D5979-1BC0-45CD-9A90-64B57600B67C}.Release|x64.ActiveCfg = Release|Any CPU
-		{908D5979-1BC0-45CD-9A90-64B57600B67C}.Release|x64.Build.0 = Release|Any CPU
-		{908D5979-1BC0-45CD-9A90-64B57600B67C}.Release|x86.ActiveCfg = Release|Any CPU
-		{908D5979-1BC0-45CD-9A90-64B57600B67C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
