@@ -156,7 +156,7 @@ The circuit breaker cycles through three states:
   Closed ──────────────────────────► Open
     ▲                                   │
     │                                   │
-    │        resetTimeout elapsed        │
+    │        resetTimeout elapsed       │
     │    ┌──────────────────────────────┘
     │    ▼
     │  HalfOpen
