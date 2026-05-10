@@ -87,6 +87,11 @@ public sealed class CircuitBreakerActor : ReceiveActor
     private readonly LogLevel _logLevel;
     private readonly ILogger<CircuitBreakerActor>? _logger;
     private readonly ConcurrentDictionary<string, BreakerState> _breakers = new();
+    private readonly ConcurrentDictionary<string, int> _inFlightCounts = new();
+
+    /// <summary>Carries the result of an async operation back to the actor via <c>PipeTo</c>,
+    /// preserving the original sender so the response reaches the correct ask-actor.</summary>
+    private sealed record OperationResult(string OperationKey, object? Result, Exception? Exception, IActorRef OriginalSender);
 
     private sealed record BreakerState(
         CircuitState State,
@@ -107,14 +112,15 @@ public sealed class CircuitBreakerActor : ReceiveActor
         _logLevel = logLevel;
         _logger = logger;
 
-        ReceiveAsync<ExecuteWithBreaker>(HandleExecuteWithBreaker);
+        Receive<ExecuteWithBreaker>(HandleExecuteWithBreaker);
         Receive<Success>(HandleSuccess);
         Receive<Failure>(HandleFailure);
         Receive<GetState>(HandleGetState);
+        Receive<OperationResult>(HandleOperationResult);
     }
 
     /// <summary>Handles a breaker execution request by checking state and running the operation if allowed.</summary>
-    private async Task HandleExecuteWithBreaker(ExecuteWithBreaker msg)
+    private void HandleExecuteWithBreaker(ExecuteWithBreaker msg)
     {
         var breaker = _breakers.GetOrAdd(msg.OperationKey, _ =>
             new BreakerState(CircuitState.Closed, 0, 0, null, msg.MaxConcurrentCalls, msg.ResetTimeout, msg.FailureThreshold));
@@ -130,7 +136,7 @@ public sealed class CircuitBreakerActor : ReceiveActor
         if (IsHalfOpenLimitReached(msg.OperationKey, currentState, breaker))
             return;
 
-        await ExecuteOperation(msg, breaker);
+        StartOperation(msg, breaker);
     }
 
     /// <summary>Rejects the operation with a <see cref="CircuitBreakerOpenException"/> when the circuit is open.</summary>
@@ -143,7 +149,9 @@ public sealed class CircuitBreakerActor : ReceiveActor
     /// <summary>Checks whether the half-open concurrent call limit has been reached.</summary>
     private bool IsHalfOpenLimitReached(string operationKey, CircuitState currentState, BreakerState breaker)
     {
-        if (currentState == CircuitState.HalfOpen && breaker.SuccessCount >= breaker.MaxConcurrentCalls)
+        if (currentState != CircuitState.HalfOpen) return false;
+        var inFlight = _inFlightCounts.GetOrAdd(operationKey, 0);
+        if (inFlight >= breaker.MaxConcurrentCalls)
         {
             Sender.Tell(new Status.Failure(new CircuitBreakerOpenException(operationKey, TimeSpan.Zero)));
             return true;
@@ -151,20 +159,58 @@ public sealed class CircuitBreakerActor : ReceiveActor
         return false;
     }
 
-    /// <summary>Executes the wrapped operation and records success or failure, replying to the originating sender.</summary>
-    private async Task ExecuteOperation(ExecuteWithBreaker msg, BreakerState breaker)
+    /// <summary>Starts the wrapped operation via <c>PipeTo</c> and returns immediately so the mailbox stays free.
+    /// Tracks the in-flight call count so the half-open limit is enforced by concurrent calls, not accumulated history.</summary>
+    private void StartOperation(ExecuteWithBreaker msg, BreakerState breaker)
     {
-        var sender = Sender;
+        _inFlightCounts.AddOrUpdate(msg.OperationKey, 1, (_, count) => count + 1);
+        var originalSender = Sender;
+        var operationKey = msg.OperationKey;
+
         try
         {
-            var result = await msg.Operation();
-            HandleSuccess(new Success(msg.OperationKey));
-            sender.Tell(result);
+            var task = msg.Operation();
+            task.PipeTo(
+                Self,
+                sender: Self,
+                success: result => new OperationResult(operationKey, result, null, originalSender),
+                failure: exception => new OperationResult(operationKey, null, exception, originalSender));
         }
         catch (Exception ex)
         {
-            HandleFailure(new Failure(msg.OperationKey, ex));
-            sender.Tell(new Status.Failure(ex));
+            if (ex is OperationCanceledException)
+            {
+                originalSender.Tell(new Status.Failure(new OperationCanceledException()));
+            }
+            else
+            {
+                HandleFailure(new Failure(operationKey, ex));
+                originalSender.Tell(new Status.Failure(ex));
+            }
+
+            _inFlightCounts.AddOrUpdate(operationKey, 0, (_, count) => Math.Max(0, count - 1));
+        }
+    }
+
+    /// <summary>Handles the async operation result delivered via <c>PipeTo</c>.
+    /// <see cref="OperationCanceledException"/> is not counted as a failure — the circuit stays in its current state.</summary>
+    private void HandleOperationResult(OperationResult msg)
+    {
+        _inFlightCounts.AddOrUpdate(msg.OperationKey, 0, (_, count) => Math.Max(0, count - 1));
+
+        if (msg.Exception is null)
+        {
+            HandleSuccess(new Success(msg.OperationKey));
+            msg.OriginalSender.Tell(msg.Result!);
+        }
+        else if (msg.Exception is OperationCanceledException)
+        {
+            msg.OriginalSender.Tell(new Status.Failure(new OperationCanceledException()));
+        }
+        else
+        {
+            HandleFailure(new Failure(msg.OperationKey, msg.Exception));
+            msg.OriginalSender.Tell(new Status.Failure(msg.Exception));
         }
     }
 

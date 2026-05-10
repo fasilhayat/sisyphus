@@ -197,6 +197,70 @@ public class CircuitBreakerActorTests : TestKit
     }
 
     /// <summary>
+    /// Verifies <see cref="OperationCanceledException"/> does NOT count as a failure.
+    /// The circuit stays in its current state (Closed) with failure count unchanged.
+    /// </summary>
+    [Fact]
+    public async Task CircuitBreaker_should_not_count_cancellation_as_failure_in_closed()
+    {
+        var actor = Sys.ActorOf(Props.Create(() => new CircuitBreakerActor(LogLevel.None, null)));
+
+        actor.Tell(new CircuitBreakerActor.ExecuteWithBreaker(
+            "cancel-op",
+            () => throw new OperationCanceledException(),
+            5,
+            TimeSpan.FromSeconds(30),
+            1));
+
+        var response = await ExpectMsgAsync<Status.Failure>();
+        Assert.IsType<OperationCanceledException>(response.Cause);
+
+        await Task.Delay(100);
+
+        actor.Tell(new CircuitBreakerActor.GetState("cancel-op"));
+        var state = await ExpectMsgAsync<CircuitBreakerActor.StateResponse>();
+        Assert.Equal(CircuitBreakerActor.CircuitState.Closed, state.State);
+        Assert.Equal(0, state.FailureCount);
+    }
+
+    /// <summary>
+    /// Verifies <see cref="OperationCanceledException"/> in HalfOpen state does NOT re-open the circuit.
+    /// The circuit stays in HalfOpen, allowing subsequent trial calls through.
+    /// </summary>
+    [Fact]
+    public async Task CircuitBreaker_should_not_reopen_on_cancellation_in_halfopen()
+    {
+        var actor = Sys.ActorOf(Props.Create(() => new CircuitBreakerActor(LogLevel.None, null)));
+        var resetTimeout = TimeSpan.FromMilliseconds(100);
+
+        actor.Tell(new CircuitBreakerActor.ExecuteWithBreaker(
+            "cancel-halfopen-op",
+            () => throw new Exception("trip"),
+            1,
+            resetTimeout,
+            1));
+        await ExpectMsgAsync<Status.Failure>();
+
+        await Task.Delay(resetTimeout + TimeSpan.FromMilliseconds(50));
+
+        actor.Tell(new CircuitBreakerActor.ExecuteWithBreaker(
+            "cancel-halfopen-op",
+            () => throw new OperationCanceledException(),
+            1,
+            resetTimeout,
+            1));
+
+        var cancelledResponse = await ExpectMsgAsync<Status.Failure>();
+        Assert.IsType<OperationCanceledException>(cancelledResponse.Cause);
+
+        await Task.Delay(100);
+
+        actor.Tell(new CircuitBreakerActor.GetState("cancel-halfopen-op"));
+        var state = await ExpectMsgAsync<CircuitBreakerActor.StateResponse>();
+        Assert.Equal(CircuitBreakerActor.CircuitState.HalfOpen, state.State);
+    }
+
+    /// <summary>
     /// Verifies the failure count resets to zero after a successful operation.
     /// </summary>
     [Fact]

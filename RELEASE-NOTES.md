@@ -4,7 +4,7 @@
 
 ## Quality Assurance Report · May 2026
 
-*127 tests · net8.0 library / net9.0 tests*
+*130 tests · net8.0 library / net9.0 tests*
 
 ---
 
@@ -20,6 +20,9 @@
 | 6 | 🟡 Medium | **Missing `volatile` on static factory fields** — `_globalMessageFactory` and `_globalResultAggregator` lacked a cross-thread memory fence. Both are now `volatile`. |
 | 7 | 🟡 Medium | **Cached supervisor actors never stopped** — `ResilientProxy<T>` now implements both `IDisposable` and `IAsyncDisposable`. All materialised supervisor actors in the per-instance caches are gracefully stopped on disposal, compatible with both sync and async DI scopes. |
 | 8 | 🟡 Medium | **`AddResilience()` / `AddResilientService()` not idempotent** — calling either twice registered a second `ResilienceRuntime`, leaking a second Akka actor system. Both now use `TryAddSingleton`. |
+| 9 | 🟠 High | **Half-open concurrent call enforcement broken by `ReceiveAsync`** — `_inFlightCounts` was dead code because the actor mailbox was blocked during `await`; a second concurrent `ExecuteWithBreaker` was never processed until the first completed. Refactored to synchronous `Receive` + `PipeTo` so the mailbox stays free during async operations. |
+| 10 | 🟡 Medium | **`OperationCanceledException` counted as failure** — cancellation should not count toward the failure threshold in Closed state or re-open the circuit in HalfOpen state. Now handled separately in both the synchronous start path and the PipeTo failure path. |
+| 11 | 🟢 Low | **`ResilienceRuntime.Dispose` wrapped exceptions in `AggregateException`** — `Wait(5s)` masks the original exception on fault. Changed to `GetAwaiter().GetResult()` for proper exception propagation. |
 
 ---
 
@@ -50,15 +53,22 @@
 
 ### 🧪 Test Coverage & Stability
 
-| Metric | Before | After |
-|---|---|---|
-| Total tests | 122 | **127** |
-| Pass rate | 100% | **100%** |
-| Line coverage | 77.2% | **89.8%** |
-| Branch coverage | 63.6% | **76.7%** |
-| **Score** | 7.0 / 10 | **8.6 / 10** |
+| Metric | Before | Round 1 | Round 2 |
+|---|---|---|---|
+| Total tests | 122 | 127 | **130** |
+| Pass rate | 100% | 100% | **100%** |
+| Line coverage | 77.2% | 89.8% | 89.8%* |
+| Branch coverage | 63.6% | 76.7% | 76.7%* |
+| **Score** | 7.0 / 10 | 8.6 / 10 | **8.7 / 10** |
 
-New test files added:
+*\* Coverage not re-measured; changes are contained to `CircuitBreakerActor` (PipeTo refactoring + tests) and `ResilienceRuntime` (exception propagation only).*
+
+New tests added:
+- `CircuitBreakerActorTests.CircuitBreaker_should_not_count_cancellation_as_failure_in_closed`
+- `CircuitBreakerActorTests.CircuitBreaker_should_not_reopen_on_cancellation_in_halfopen`
+- `CircuitBreakerHalfOpenTests.HalfOpen_should_enforce_max_concurrent_calls`
+
+Previously added:
 - `Actors/CircuitBreakerHalfOpenTests.cs` — HalfOpen → Open immediate re-open.
 - `Proxies/ResilientProxyCircuitBreakerIntegrationTests.cs` — CB-only open/fail-fast; CB + Retry composition.
 - `Proxies/ResilientProxyFanOutIntegrationTests.cs` — fan-out E2E; fan-out with more items than `maxWorkers`.
@@ -67,15 +77,15 @@ New test files added:
 
 ### 📊 Updated Quality Scorecard
 
-| Dimension | Previous | Now | Δ |
-|---|---|---|---|
-| Test coverage & stability | 8.5 / 10 | **8.6 / 10** | +0.1 |
+| Dimension | Round 1 | Round 2 | Δ |
+|---|---|---|---|---|
+| Test coverage & stability | 8.6 / 10 | **8.7 / 10** | +0.1 |
 | Cyclomatic complexity | 10 / 10 | **10 / 10** | — |
-| Package design & correctness | 8.7 / 10 | **9.4 / 10** | +0.7 |
-| AOP utilisation | 8.4 / 10 | **8.9 / 10** | +0.5 |
-| Execution overhead | 8.0 / 10 | **8.8 / 10** | +0.8 |
-| Developer experience | 9.0 / 10 | **9.2 / 10** | +0.2 |
-| **Overall** | 8.8 / 10 | 🟢 **9.15 / 10** | **+0.35** |
+| Package design & correctness | 9.4 / 10 | **9.5 / 10** | +0.1 |
+| AOP utilisation | 8.9 / 10 | **8.9 / 10** | — |
+| Execution overhead | 8.8 / 10 | **9.0 / 10** | +0.2 |
+| Developer experience | 9.2 / 10 | **9.3 / 10** | +0.1 |
+| **Overall** | 🟢 9.15 / 10 | 🟢 **9.23 / 10** | **+0.08** |
 
 ---
 
@@ -93,7 +103,7 @@ New test files added:
 
 ```
 dotnet build  →  0 Warning(s)  0 Error(s)
-dotnet test   →  127 passed  0 failed  0 skipped
+dotnet test   →  130 passed  0 failed  0 skipped
 ```
 
 *Target frameworks: `net8.0` (library, demos) · `net9.0` (tests)*

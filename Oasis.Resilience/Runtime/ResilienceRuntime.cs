@@ -82,7 +82,7 @@ internal sealed class ResilienceRuntime : IDisposable, IAsyncDisposable
     /// <summary>Disposes the actor system resources synchronously.</summary>
     public void Dispose()
     {
-        System.Terminate().Wait(TimeSpan.FromSeconds(5));
+        System.Terminate().GetAwaiter().GetResult();
     }
 
     /// <summary>Disposes the actor system resources asynchronously.</summary>
