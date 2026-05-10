@@ -164,7 +164,7 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
     {
         var returnType = implementedMethod.ReturnType;
         if (!returnType.IsGenericType)
-            throw new InvalidOperationException("Only Task<T> supported.");
+            throw new InvalidOperationException($"Method '{implementedMethod.Name}' on '{implementedMethod.DeclaringType?.Name}' has unsupported return type '{returnType.Name}'. Only Task<T> is supported.");
 
         var resultType = returnType.GetGenericArguments()[0];
         return typeof(ResilientProxy<T>).GetMethod(nameof(InvokeGeneric), BindingFlags.NonPublic | BindingFlags.Instance)!
@@ -214,7 +214,7 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
         if (supervisionAttr is not null)
             return (TResult)await operation();
 
-        throw new InvalidOperationException("No resilience attributes configured.");
+        throw new InvalidOperationException($"No resilience attributes configured on method '{implementedMethod.Name}' of '{implementedMethod.DeclaringType?.Name}'.");
     }
 
     /// <summary>Creates a delegate that invokes the method and returns its typed result as an object.
@@ -234,7 +234,7 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
                 throw tie.InnerException;
             }
 
-            if (result is null) throw new InvalidOperationException("Method invocation returned null");
+            if (result is null) throw new InvalidOperationException($"Method '{implementedMethod.Name}' returned null, but a Task<T> was expected.");
 
             var task = (Task<TResult>)result;
             return (await task)!;

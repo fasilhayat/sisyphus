@@ -117,7 +117,7 @@ public class ResilientProxyInvokeTests : ProxyTestBase
             method!.Invoke(resilientProxy, [doWorkMethod!, Array.Empty<object>(), null, null, null, null]));
 
         Assert.IsType<InvalidOperationException>(ex.InnerException);
-        Assert.Contains("Only Task<T> supported", ex.InnerException.Message);
+        Assert.Contains("supported return type", ex.InnerException.Message);
     }
 
     /// <summary>

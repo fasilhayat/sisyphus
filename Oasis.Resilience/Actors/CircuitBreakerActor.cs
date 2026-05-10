@@ -127,7 +127,7 @@ public sealed class CircuitBreakerActor : ReceiveActor
             return;
         }
 
-        if (IsHalfOpenLimitReached(currentState, breaker))
+        if (IsHalfOpenLimitReached(msg.OperationKey, currentState, breaker))
             return;
 
         await ExecuteOperation(msg, breaker);
@@ -141,11 +141,11 @@ public sealed class CircuitBreakerActor : ReceiveActor
     }
 
     /// <summary>Checks whether the half-open concurrent call limit has been reached.</summary>
-    private bool IsHalfOpenLimitReached(CircuitState currentState, BreakerState breaker)
+    private bool IsHalfOpenLimitReached(string operationKey, CircuitState currentState, BreakerState breaker)
     {
         if (currentState == CircuitState.HalfOpen && breaker.SuccessCount >= breaker.MaxConcurrentCalls)
         {
-            Sender.Tell(new Status.Failure(new CircuitBreakerOpenException(string.Empty, TimeSpan.Zero)));
+            Sender.Tell(new Status.Failure(new CircuitBreakerOpenException(operationKey, TimeSpan.Zero)));
             return true;
         }
         return false;
