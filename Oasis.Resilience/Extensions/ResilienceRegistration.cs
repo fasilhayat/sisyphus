@@ -75,6 +75,8 @@ public static class ResilienceRegistration
             p.ResilienceActorRef = runtime.RetryActor;
             p.CircuitBreakerActorRef = runtime.CircuitBreakerActor;
             p.ActorSystem = runtime.System;
+            p.RetryOptions = runtime.RetryOptions;
+            p.CircuitBreakerOptions = runtime.CircuitBreakerOptions;
             p.SupervisionOptions = runtime.SupervisionOptions;
             p.FanOutOptions = runtime.FanOutOptions;
             return proxy;

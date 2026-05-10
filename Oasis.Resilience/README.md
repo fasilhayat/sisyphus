@@ -44,6 +44,135 @@ Every call to `GetDataAsync` is now automatically intercepted and wrapped with t
 
 ---
 
+## Resilience patterns at a glance
+
+These are the four AOP-enabled features. Pick the one that matches the failure mode you're trying to handle.
+
+### 🔁 Retry — `[Retry]`
+
+**What it does.** If the method throws, automatically calls it again — up to `maxAttempts` times — with an exponentially growing delay between attempts (plus a small random jitter so many clients don't retry in lock-step).
+
+**When to use it.** For *transient* failures that usually go away on a second try: a flaky network, a brief HTTP 503, a database deadlock, a timeout. Don't use it for permanent errors (validation, 401, 404) — you'll just waste time.
+
+```mermaid
+flowchart LR
+    C([Caller]) --> A1[Attempt 1]
+    A1 -->|✅ success| OK([Return result])
+    A1 -->|❌ fail| W1[wait ~500ms]
+    W1 --> A2[Attempt 2]
+    A2 -->|✅| OK
+    A2 -->|❌| W2[wait ~1s + jitter]
+    W2 --> A3[Attempt 3]
+    A3 -->|✅| OK
+    A3 -->|❌ exhausted| FAIL([Throw])
+```
+
+```csharp
+[Retry(maxAttempts: 4, initialDelay: 500)]
+public Task<string> GetDataAsync() { ... }
+```
+
+### ⚡ Circuit Breaker — `[CircuitBreaker]`
+
+**What it does.** Counts consecutive failures. After `failureThreshold` failures the breaker **opens** and every following call fails fast with `CircuitBreakerOpenException` instead of hammering the broken dependency. After `resetTimeout` ms it goes **half-open** and lets a single test call through; success closes the circuit, failure re-opens it immediately.
+
+**When to use it.** When a downstream service is *down or seriously degraded* and continuing to call it would only make things worse (cascading failures, exhausted thread pools, growing queues). The breaker gives the dependency time to recover.
+
+**Combine with Retry.** `[Retry] + [CircuitBreaker]` is the classic combo: retry handles transient blips, the breaker stops the bleeding when blips become an outage.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Closed
+    Closed --> Closed: ✅ success
+    Closed --> Open: ❌ failures ≥ threshold
+    Open --> HalfOpen: ⏱ resetTimeout elapsed
+    HalfOpen --> Closed: ✅ test call ok
+    HalfOpen --> Open: ❌ test call fails
+    note right of Open
+        Calls fail fast with
+        CircuitBreakerOpenException
+    end note
+```
+
+```csharp
+[CircuitBreaker(failureThreshold: 3, resetTimeout: 15000)]
+[Retry(maxAttempts: 3, initialDelay: 500)]
+public Task<string> GetInventoryAsync() { ... }
+```
+
+### 🛡️ Supervision — `[Supervision]`
+
+**What it does.** Runs the call inside a supervised Akka.NET actor. If the actor crashes, the supervisor restarts it according to the chosen strategy (`Restart`, `RestartWithBackoff`, `Resume`, `Stop`, `Escalate`) — with optional exponential backoff and jitter between restarts.
+
+**When to use it.** For long-lived or stateful operations where you want the *runtime* to recover from crashes the way Erlang/Akka do — "let it crash, then restart it cleanly". This is more about *process supervision* than per-call retries; use Retry for "try again now", Supervision for "rebuild the worker after it died".
+
+```mermaid
+flowchart LR
+    C([Caller]) --> S[Supervisor actor]
+    S -->|spawns| W[Worker actor]
+    W -->|✅ result| S
+    S -->|reply| C
+    W -.->|💥 crash| S
+    S -->|RestartWithBackoff<br/>wait + jitter| W2[Fresh worker]
+    W2 -->|✅ result| S
+```
+
+```csharp
+[Supervision(strategy: SupervisionStrategy.RestartWithBackoff, maxRetries: 5)]
+public Task<string> RunBackgroundJobAsync() { ... }
+```
+
+### 🪂 Fan-Out — `[FanOut]`
+
+**What it does.** Splits a collection parameter into work items and dispatches each one to a pool of worker actors in parallel. Results are collected and aggregated back into a single return value via the registered message factory + result aggregator.
+
+**When to use it.** When a single call processes a list and each item is independent — fetching holidays for many years, validating many records, calling a downstream API once per id. Fan-out turns a sequential O(n) call into a parallel one bounded by `maxWorkers`.
+
+```mermaid
+flowchart LR
+    C([Caller: years=2022..2025]) --> P[Proxy / coordinator]
+    P -->|year 2022| W1[Worker 1]
+    P -->|year 2023| W2[Worker 2]
+    P -->|year 2024| W3[Worker 3]
+    P -->|year 2025| W4[Worker 4]
+    W1 --> AGG[Aggregator]
+    W2 --> AGG
+    W3 --> AGG
+    W4 --> AGG
+    AGG --> R([Dictionary&lt;year, holidays&gt;])
+```
+
+```csharp
+[FanOut(workerActorType: typeof(HolidayWorkerActor), splitParameterName: "years", maxWorkers: 4)]
+public Task<Dictionary<int, string>> GetHolidaysForYearsAsync(int[] years, string country) { ... }
+```
+
+You also register *how* to build a worker message and *how* to combine the results once at startup:
+
+```csharp
+ResilientProxy<IHolidayService>.RegisterMessageFactory((workerType, splitValue, parameters, otherArgs) =>
+    new HolidayWorkerActor.ProcessYear((int)splitValue, (string)otherArgs[0]));
+
+ResilientProxy<IHolidayService>.RegisterResultAggregator((results, workerType, returnType) =>
+    results.Cast<HolidayWorkerActor.YearProcessed>().ToDictionary(r => r.Year, r => r.Content));
+```
+
+### Stacking attributes
+
+Attributes compose — apply more than one to a single method and the proxy applies them outside-in:
+**Fan-Out → Circuit Breaker → Retry → Supervision → your method**. So a fan-out worker call can itself be retried, and the breaker can short-circuit the whole thing once the dependency is clearly down.
+
+```mermaid
+flowchart LR
+    C([Caller]) --> F[FanOut splits work]
+    F --> CB[CircuitBreaker fails fast if open]
+    CB --> R[Retry on transient errors]
+    R --> SUP[Supervision restarts on crash]
+    SUP --> M[your method]
+```
+
+---
+
 ## Configuration
 
 Call `AddResilience` during startup to register the resilience infrastructure:
@@ -74,6 +203,23 @@ All configuration delegates are optional. The values you set become the global d
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `LogLevel` | `LogLevel` | `Debug` | Controls the log level for resilience tracing output |
+| `DefaultMaxAttempts` | `int` | `5` | Default number of attempts when `[Retry]` omits `maxAttempts` |
+| `DefaultInitialDelayMs` | `int` | `2000` | Default initial backoff delay in milliseconds (doubled each attempt) |
+| `MaxDelayMs` | `int` | `30000` | Upper bound for the exponential backoff delay between retries |
+| `JitterFactor` | `double` | `0.2` | Random jitter applied to each backoff (0 = none, 1 = ±100%) |
+| `AskTimeout` | `TimeSpan` | `30s` | Timeout for actor `Ask` calls used internally by the proxy |
+
+Example tuning retry behaviour and disabling logs in tests:
+
+```csharp
+services.AddResilience(configureRetryOptions: options =>
+{
+    options.LogLevel = LogLevel.None;
+    options.MaxDelayMs = 5_000;
+    options.JitterFactor = 0.3;
+    options.AskTimeout = TimeSpan.FromSeconds(10);
+});
+```
 
 ### CircuitBreakerOptions
 

@@ -33,27 +33,32 @@ public sealed class SupervisionAttribute : Attribute
     public double RandomFactor { get; }
 
     /// <summary>
-    /// Initializes a new instance of the SupervisionAttribute class.
+    /// Initializes a new instance of the <see cref="SupervisionAttribute"/> class.
+    /// Use <c>-1</c> for any numeric parameter to inherit the value from <see cref="SupervisionOptions"/>.
     /// </summary>
-    /// <param name="strategy">The supervision strategy. Default is RestartWithBackoff.</param>
-    /// <param name="maxRetries">The maximum number of retries. Default is 5.</param>
-    /// <param name="backoffMinMs">The minimum backoff in milliseconds. Default is 2000.</param>
-    /// <param name="backoffMaxMs">The maximum backoff in milliseconds. Default is 30000.</param>
-    /// <param name="randomFactor">The random factor for jitter. Default is 0.2.</param>
+    /// <param name="strategy">The supervision strategy. Default is <see cref="SupervisionStrategy.RestartWithBackoff"/>.</param>
+    /// <param name="maxRetries">The maximum number of retries. Use <c>-1</c> to use the configured default.</param>
+    /// <param name="backoffMinMs">The minimum backoff in milliseconds. Use <c>-1</c> to use the configured default.</param>
+    /// <param name="backoffMaxMs">The maximum backoff in milliseconds. Use <c>-1</c> to use the configured default.</param>
+    /// <param name="randomFactor">The random factor for jitter. Use <c>-1</c> to use the configured default.</param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when maxRetries is less than 1, backoffMinMs is negative, backoffMaxMs is negative, or randomFactor is negative.
+    /// Thrown when an explicitly supplied value is invalid.
     /// </exception>
     public SupervisionAttribute(
         SupervisionStrategy strategy = SupervisionStrategy.RestartWithBackoff,
-        int maxRetries = 5,
-        int backoffMinMs = 2000,
-        int backoffMaxMs = 30000,
-        double randomFactor = 0.2)
+        int maxRetries = AttributeDefaults.UnsetInt,
+        int backoffMinMs = AttributeDefaults.UnsetInt,
+        int backoffMaxMs = AttributeDefaults.UnsetInt,
+        double randomFactor = AttributeDefaults.UnsetDouble)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(maxRetries, 1);
-        ArgumentOutOfRangeException.ThrowIfNegative(backoffMinMs);
-        ArgumentOutOfRangeException.ThrowIfNegative(backoffMaxMs);
-        ArgumentOutOfRangeException.ThrowIfNegative(randomFactor);
+        if (maxRetries != AttributeDefaults.UnsetInt)
+            ArgumentOutOfRangeException.ThrowIfLessThan(maxRetries, 1);
+        if (backoffMinMs != AttributeDefaults.UnsetInt)
+            ArgumentOutOfRangeException.ThrowIfNegative(backoffMinMs);
+        if (backoffMaxMs != AttributeDefaults.UnsetInt)
+            ArgumentOutOfRangeException.ThrowIfNegative(backoffMaxMs);
+        if (randomFactor != AttributeDefaults.UnsetDouble)
+            ArgumentOutOfRangeException.ThrowIfNegative(randomFactor);
 
         Strategy = strategy;
         MaxRetries = maxRetries;

@@ -161,10 +161,11 @@ public class ResilientProxyCoreTests
 
         var supervisionAttr = new SupervisionAttribute();
 
+        var dummyMethod = typeof(ITestService).GetMethods()[0];
         var method = typeof(ResilientProxy<ITestService>).GetMethod("WrapWithSupervision",
             BindingFlags.NonPublic | BindingFlags.Instance);
         var wrappedOp = (Func<Task<object>>)method?.Invoke(resilientProxy,
-            [() => Task.FromResult<object>("test"), supervisionAttr])!;
+            [dummyMethod, () => Task.FromResult<object>("test"), supervisionAttr])!;
 
         var result = await wrappedOp();
 

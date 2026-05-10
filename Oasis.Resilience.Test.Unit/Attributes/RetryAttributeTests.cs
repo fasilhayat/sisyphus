@@ -9,7 +9,7 @@ using Xunit;
 public class RetryAttributeTests
 {
     /// <summary>
-    /// Verifies the default property values of <see cref="RetryAttribute"/>.
+    /// Verifies the default property values of <see cref="RetryAttribute"/> are sentinel (unset).
     /// </summary>
     [Fact]
     public void Should_have_default_values()
@@ -18,8 +18,9 @@ public class RetryAttributeTests
         var attr = new RetryAttribute();
 
         // Assert
-        Assert.Equal(5, attr.MaxAttempts);
-        Assert.Equal(2000, attr.InitialDelay);
+        Assert.Equal(AttributeDefaults.UnsetInt, attr.MaxAttempts);
+        Assert.Equal(AttributeDefaults.UnsetInt, attr.InitialDelay);
+        Assert.Null(attr.RetryOn);
     }
 
     /// <summary>
@@ -37,24 +38,25 @@ public class RetryAttributeTests
     }
 
     /// <summary>
-    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for invalid max attempts values.
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for invalid max attempts values
+    /// (the sentinel <c>-1</c> is permitted, but <c>0</c> is not).
     /// </summary>
     [Fact]
     public void Should_throw_for_invalid_maxAttempts()
     {
         // Arrange & Act & Assert
         Assert.Throws<ArgumentOutOfRangeException>(() => new RetryAttribute(maxAttempts: 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new RetryAttribute(maxAttempts: -1));
     }
 
     /// <summary>
-    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative initial delay.
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative initial delay
+    /// (the sentinel <c>-1</c> is permitted, but <c>-2</c> is not).
     /// </summary>
     [Fact]
     public void Should_throw_for_negative_initialDelay()
     {
         // Arrange & Act & Assert
-        Assert.Throws<ArgumentOutOfRangeException>(() => new RetryAttribute(initialDelay: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RetryAttribute(initialDelay: -2));
     }
 
     /// <summary>

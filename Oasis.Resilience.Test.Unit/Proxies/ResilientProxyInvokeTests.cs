@@ -139,8 +139,9 @@ public class ResilientProxyInvokeTests : ProxyTestBase
 
         var supervisionAttr = new SupervisionAttribute(SupervisionStrategy.Restart);
 
+        var dummyMethod = typeof(ITestService2).GetMethods()[0];
         var wrappedOp = method!.Invoke(resilientProxy,
-            [new Func<Task<object>>(() => Task.FromResult<object>("test")), supervisionAttr])
+            [dummyMethod, new Func<Task<object>>(() => Task.FromResult<object>("test")), supervisionAttr])
             as Func<Task<object>>;
 
         Assert.NotNull(wrappedOp);

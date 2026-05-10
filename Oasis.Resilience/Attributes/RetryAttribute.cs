@@ -10,30 +10,53 @@
 public sealed class RetryAttribute : Attribute
 {
     /// <summary>
-    /// Gets the maximum number of allowed attempts.
+    /// Gets the maximum number of allowed attempts, or <see cref="AttributeDefaults.UnsetInt"/>
+    /// to indicate the value should be resolved from <see cref="RetryOptions.DefaultMaxAttempts"/>.
     /// </summary>
     public int MaxAttempts { get; }
 
     /// <summary>
-    /// Gets the initial delay, in milliseconds, before starting the operation.
+    /// Gets the initial delay (in milliseconds) before retrying, or <see cref="AttributeDefaults.UnsetInt"/>
+    /// to indicate the value should be resolved from <see cref="RetryOptions.DefaultInitialDelayMs"/>.
     /// </summary>
     public int InitialDelay { get; }
 
     /// <summary>
-    /// Initializes a new instance of the RetryAttribute class.
-    /// Default values are 5 retry attempts and an initial delay of 2 seconds.
+    /// Gets the optional set of exception types that should trigger a retry. When <c>null</c>,
+    /// the value falls back to <see cref="RetryOptions.DefaultRetryOnExceptions"/>; when both are
+    /// <c>null</c>, every exception is retried.
     /// </summary>
-    /// <param name="maxAttempts">The maximum number of retry attempts. Default is 5.</param>
-    /// <param name="initialDelay">The initial delay between attempts, in milliseconds. Default is 2000.</param>
+    public Type[]? RetryOn { get; }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RetryAttribute"/> class.
+    /// </summary>
+    /// <param name="maxAttempts">
+    /// The maximum number of retry attempts. Use <c>-1</c> (the default) to resolve from <see cref="RetryOptions"/>.
+    /// </param>
+    /// <param name="initialDelay">
+    /// The initial delay between attempts, in milliseconds. Use <c>-1</c> (the default) to resolve from <see cref="RetryOptions"/>.
+    /// </param>
+    /// <param name="retryOn">
+    /// Optional set of exception types that should trigger a retry. When <c>null</c> (default), the value
+    /// falls back to the configured global default.
+    /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when maxAttempts is less than 1 or initialDelay is negative.
+    /// Thrown when an explicitly supplied <paramref name="maxAttempts"/> is less than 1, or when
+    /// <paramref name="initialDelay"/> is explicitly negative (other than <c>-1</c>).
     /// </exception>
-    public RetryAttribute(int maxAttempts = 5, int initialDelay = 2000)
+    public RetryAttribute(
+        int maxAttempts = AttributeDefaults.UnsetInt,
+        int initialDelay = AttributeDefaults.UnsetInt,
+        Type[]? retryOn = null)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(maxAttempts, 1);
-        ArgumentOutOfRangeException.ThrowIfNegative(initialDelay);
+        if (maxAttempts != AttributeDefaults.UnsetInt)
+            ArgumentOutOfRangeException.ThrowIfLessThan(maxAttempts, 1);
+        if (initialDelay != AttributeDefaults.UnsetInt)
+            ArgumentOutOfRangeException.ThrowIfNegative(initialDelay);
 
         MaxAttempts = maxAttempts;
         InitialDelay = initialDelay;
+        RetryOn = retryOn;
     }
 }

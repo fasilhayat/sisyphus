@@ -32,11 +32,11 @@ public class FanOutAttributeTests
     }
 
     /// <summary>
-    /// Tests that constructor throws when maxWorkers is less than 1.
+    /// Tests that constructor throws when maxWorkers is less than 1 (the sentinel <c>-1</c> is permitted).
     /// </summary>
     [Theory]
     [InlineData(0)]
-    [InlineData(-1)]
+    [InlineData(-2)]
     public void Constructor_should_throw_when_maxWorkers_less_than_one(int invalidMaxWorkers)
     {
         // Arrange, Act & Assert
@@ -45,7 +45,7 @@ public class FanOutAttributeTests
     }
 
     /// <summary>
-    /// Tests that default constructor values are applied correctly.
+    /// Tests that default constructor leaves <c>MaxWorkers</c> at the sentinel (unset) value.
     /// </summary>
     [Fact]
     public void Default_constructor_should_set_default_values()
@@ -56,7 +56,7 @@ public class FanOutAttributeTests
         // Assert
         Assert.Equal(typeof(string), attribute.WorkerActorType);
         Assert.Equal("test", attribute.SplitParameterName);
-        Assert.Equal(5, attribute.MaxWorkers);
+        Assert.Equal(AttributeDefaults.UnsetInt, attribute.MaxWorkers);
     }
 
     /// <summary>

@@ -4,7 +4,7 @@ using Oasis.Resilience;
 using ResilienceWithAop;
 
 var services = new ServiceCollection();
-services.AddResilience()
+services.AddResilience(options => options.LogLevel = LogLevel.Information)
     .AddResilientService<ITiwazService, TiwazService>();
 
 using var serviceProvider = services.BuildServiceProvider();
@@ -32,8 +32,3 @@ catch (Exception ex)
 
 Console.WriteLine("Press ENTER to terminate...");
 Console.ReadLine();
-
-services.Configure<RetryOptions>("ResilienceOptions", options =>
-{
-    options.LogLevel = LogLevel.Debug;
-});

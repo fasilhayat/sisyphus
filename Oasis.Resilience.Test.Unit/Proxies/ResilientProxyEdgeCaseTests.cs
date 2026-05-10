@@ -82,11 +82,12 @@ public class ResilientProxyEdgeCaseTests : ProxyTestBase
 
         var supervisionAttr = new SupervisionAttribute(SupervisionStrategy.Restart);
 
+        var dummyMethod = typeof(ITestService2).GetMethods()[0];
         var method = typeof(ResilientProxy<ITestService2>).GetMethod("WrapWithSupervision",
             BindingFlags.NonPublic | BindingFlags.Instance);
 
         var wrappedOp = method!.Invoke(resilientProxy,
-            new object[] { new Func<Task<object>>(() => Task.FromResult<object>("test")), supervisionAttr })
+            new object[] { dummyMethod, new Func<Task<object>>(() => Task.FromResult<object>("test")), supervisionAttr })
             as Func<Task<object>>;
 
         Assert.NotNull(wrappedOp);
@@ -110,12 +111,15 @@ public class ResilientProxyEdgeCaseTests : ProxyTestBase
         var method = typeof(ResilientProxy<ITestService2>).GetMethod("WrapWithSupervision",
             BindingFlags.NonPublic | BindingFlags.Instance);
 
+        var dummyMethods = typeof(ITestService2).GetMethods();
+        int methodIndex = 0;
         foreach (var strategy in new[] { SupervisionStrategy.Restart, SupervisionStrategy.RestartWithBackoff, SupervisionStrategy.Stop, SupervisionStrategy.Escalate, SupervisionStrategy.Resume })
         {
             var supervisionAttr = new SupervisionAttribute(strategy);
+            var dummyMethod = dummyMethods[methodIndex++ % dummyMethods.Length];
 
             var wrappedOp = method!.Invoke(resilientProxy,
-                new object[] { new Func<Task<object>>(() => Task.FromResult<object>($"result-{strategy}")), supervisionAttr })
+                new object[] { dummyMethod, new Func<Task<object>>(() => Task.FromResult<object>($"result-{strategy}")), supervisionAttr })
                 as Func<Task<object>>;
 
             Assert.NotNull(wrappedOp);

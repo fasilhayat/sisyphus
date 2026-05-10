@@ -23,21 +23,22 @@ public sealed class FanOutAttribute : Attribute
     public int MaxWorkers { get; }
 
     /// <summary>
-    /// Initializes a new instance of the FanOutAttribute class.
+    /// Initializes a new instance of the <see cref="FanOutAttribute"/> class.
     /// </summary>
     /// <param name="workerActorType">The type of worker actor to spawn.</param>
     /// <param name="splitParameterName">The name of the parameter to split for distribution.</param>
-    /// <param name="maxWorkers">The maximum number of workers. Default is 5.</param>
+    /// <param name="maxWorkers">The maximum number of workers. Use <c>-1</c> (default) to inherit from <see cref="FanOutOptions.DefaultMaxWorkers"/>.</param>
     /// <exception cref="ArgumentNullException">Thrown when workerActorType or splitParameterName is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when maxWorkers is less than 1.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when an explicitly supplied maxWorkers is less than 1.</exception>
     public FanOutAttribute(
         Type workerActorType,
         string splitParameterName,
-        int maxWorkers = 5)
+        int maxWorkers = AttributeDefaults.UnsetInt)
     {
         ArgumentNullException.ThrowIfNull(workerActorType);
         ArgumentNullException.ThrowIfNull(splitParameterName);
-        ArgumentOutOfRangeException.ThrowIfLessThan(maxWorkers, 1);
+        if (maxWorkers != AttributeDefaults.UnsetInt)
+            ArgumentOutOfRangeException.ThrowIfLessThan(maxWorkers, 1);
 
         WorkerActorType = workerActorType;
         SplitParameterName = splitParameterName;

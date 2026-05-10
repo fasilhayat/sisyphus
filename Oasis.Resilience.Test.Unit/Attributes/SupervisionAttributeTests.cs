@@ -10,6 +10,7 @@ public class SupervisionAttributeTests
 {
     /// <summary>
     /// Verifies the default property values of <see cref="SupervisionAttribute"/>.
+    /// Strategy retains a real default; numerics are sentinel (unset).
     /// </summary>
     [Fact]
     public void Should_have_default_values()
@@ -19,10 +20,10 @@ public class SupervisionAttributeTests
 
         // Assert
         Assert.Equal(SupervisionStrategy.RestartWithBackoff, attr.Strategy);
-        Assert.Equal(5, attr.MaxRetries);
-        Assert.Equal(2000, attr.BackoffMinMs);
-        Assert.Equal(30000, attr.BackoffMaxMs);
-        Assert.Equal(0.2, attr.RandomFactor);
+        Assert.Equal(AttributeDefaults.UnsetInt, attr.MaxRetries);
+        Assert.Equal(AttributeDefaults.UnsetInt, attr.BackoffMinMs);
+        Assert.Equal(AttributeDefaults.UnsetInt, attr.BackoffMaxMs);
+        Assert.Equal(AttributeDefaults.UnsetDouble, attr.RandomFactor);
     }
 
     /// <summary>
@@ -55,37 +56,39 @@ public class SupervisionAttributeTests
     {
         // Arrange & Act & Assert
         Assert.Throws<ArgumentOutOfRangeException>(() => new SupervisionAttribute(maxRetries: 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new SupervisionAttribute(maxRetries: -1));
     }
 
     /// <summary>
-    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative backoff minimum.
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative backoff minimum
+    /// (the sentinel <c>-1</c> is permitted, but <c>-2</c> is not).
     /// </summary>
     [Fact]
     public void Should_throw_for_negative_backoffMinMs()
     {
         // Arrange & Act & Assert
-        Assert.Throws<ArgumentOutOfRangeException>(() => new SupervisionAttribute(backoffMinMs: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SupervisionAttribute(backoffMinMs: -2));
     }
 
     /// <summary>
-    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative backoff maximum.
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative backoff maximum
+    /// (the sentinel <c>-1</c> is permitted, but <c>-2</c> is not).
     /// </summary>
     [Fact]
     public void Should_throw_for_negative_backoffMaxMs()
     {
         // Arrange & Act & Assert
-        Assert.Throws<ArgumentOutOfRangeException>(() => new SupervisionAttribute(backoffMaxMs: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SupervisionAttribute(backoffMaxMs: -2));
     }
 
     /// <summary>
-    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative random factor.
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative random factor
+    /// (the sentinel <c>-1.0</c> is permitted, but anything else negative is not).
     /// </summary>
     [Fact]
     public void Should_throw_for_negative_randomFactor()
     {
         // Arrange & Act & Assert
-        Assert.Throws<ArgumentOutOfRangeException>(() => new SupervisionAttribute(randomFactor: -0.1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SupervisionAttribute(randomFactor: -0.5));
     }
 
     /// <summary>

@@ -9,7 +9,7 @@ using Xunit;
 public class CircuitBreakerAttributeTests
 {
     /// <summary>
-    /// Verifies the default property values of <see cref="CircuitBreakerAttribute"/>.
+    /// Verifies the default property values of <see cref="CircuitBreakerAttribute"/> are sentinel (unset).
     /// </summary>
     [Fact]
     public void Should_have_default_values()
@@ -18,9 +18,9 @@ public class CircuitBreakerAttributeTests
         var attr = new CircuitBreakerAttribute();
 
         // Assert
-        Assert.Equal(5, attr.FailureThreshold);
-        Assert.Equal(30000, attr.ResetTimeout);
-        Assert.Equal(1, attr.MaxConcurrentCalls);
+        Assert.Equal(AttributeDefaults.UnsetInt, attr.FailureThreshold);
+        Assert.Equal(AttributeDefaults.UnsetInt, attr.ResetTimeout);
+        Assert.Equal(AttributeDefaults.UnsetInt, attr.MaxConcurrentCalls);
     }
 
     /// <summary>
@@ -49,17 +49,17 @@ public class CircuitBreakerAttributeTests
     {
         // Arrange & Act & Assert
         Assert.Throws<ArgumentOutOfRangeException>(() => new CircuitBreakerAttribute(failureThreshold: 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CircuitBreakerAttribute(failureThreshold: -1));
     }
 
     /// <summary>
-    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative reset timeout.
+    /// Verifies an <see cref="ArgumentOutOfRangeException"/> is thrown for a negative reset timeout
+    /// (the sentinel <c>-1</c> is permitted, but <c>-2</c> is not).
     /// </summary>
     [Fact]
     public void Should_throw_for_negative_resetTimeout()
     {
         // Arrange & Act & Assert
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CircuitBreakerAttribute(resetTimeout: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CircuitBreakerAttribute(resetTimeout: -2));
     }
 
     /// <summary>
@@ -70,7 +70,6 @@ public class CircuitBreakerAttributeTests
     {
         // Arrange & Act & Assert
         Assert.Throws<ArgumentOutOfRangeException>(() => new CircuitBreakerAttribute(maxConcurrentCalls: 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CircuitBreakerAttribute(maxConcurrentCalls: -1));
     }
 
     /// <summary>

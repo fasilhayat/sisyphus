@@ -39,7 +39,20 @@ ResilientProxy<IHolidayService>.RegisterResultAggregator((results, workerType, r
     throw new InvalidOperationException($"Unsupported return type {returnType.Name} for worker {workerType.Name}");
 });
 
-services.AddResilience(options => options.LogLevel = LogLevel.Debug);
+services.AddResilience(options =>
+{
+    // Log level for resilience tracing (Debug/Information/Warning/Error/None).
+    options.LogLevel = LogLevel.Debug;
+
+    // Cap the exponential backoff so retries never wait longer than this between attempts.
+    options.MaxDelayMs = 10_000;
+
+    // Add ±20% random jitter to each backoff delay to avoid retry storms.
+    options.JitterFactor = 0.2;
+
+    // Timeout used for internal actor Ask calls (raise it for slow downstream services).
+    options.AskTimeout = TimeSpan.FromSeconds(15);
+});
 services.AddResilientService<ICalendarService, CalendarService>();
 services.AddResilientService<ITiwazService, TiwazService>();
 services.AddResilientService<IInventoryService, InventoryService>();

@@ -151,19 +151,20 @@ public sealed class CircuitBreakerActor : ReceiveActor
         return false;
     }
 
-    /// <summary>Executes the wrapped operation and records success or failure.</summary>
+    /// <summary>Executes the wrapped operation and records success or failure, replying to the originating sender.</summary>
     private async Task ExecuteOperation(ExecuteWithBreaker msg, BreakerState breaker)
     {
+        var sender = Sender;
         try
         {
             var result = await msg.Operation();
             HandleSuccess(new Success(msg.OperationKey));
-            Sender.Tell(result);
+            sender.Tell(result);
         }
         catch (Exception ex)
         {
             HandleFailure(new Failure(msg.OperationKey, ex));
-            Sender.Tell(new Status.Failure(ex));
+            sender.Tell(new Status.Failure(ex));
         }
     }
 
@@ -180,28 +181,44 @@ public sealed class CircuitBreakerActor : ReceiveActor
         Log($"Circuit breaker for '{msg.OperationKey}' is now Closed");
     }
 
-    /// <summary>Records a failed operation and opens the circuit if the failure threshold is reached.</summary>
+    /// <summary>Records a failed operation. In <see cref="CircuitState.HalfOpen"/> the circuit re-opens
+    /// immediately; in <see cref="CircuitState.Closed"/> it opens once the failure threshold is reached.</summary>
     private void HandleFailure(Failure msg)
     {
         _breakers.AddOrUpdate(
             msg.OperationKey,
             key => new BreakerState(CircuitState.Open, 1, 0, DateTime.UtcNow, 1, TimeSpan.FromSeconds(30), 5),
-            (key, state) =>
-            {
-                var newFailureCount = state.FailureCount + 1;
-                if (newFailureCount >= state.FailureThreshold)
-                {
-                    Log($"Circuit breaker for '{msg.OperationKey}' opened after {newFailureCount} failures");
-                    return state with
-                    {
-                        State = CircuitState.Open,
-                        FailureCount = newFailureCount,
-                        OpenedAt = DateTime.UtcNow
-                    };
-                }
+            (key, state) => UpdateOnFailure(key, state));
+    }
 
-                return state with { FailureCount = newFailureCount };
-            });
+    /// <summary>Computes the next breaker state after a failure, honoring the half-open re-open rule.</summary>
+    private BreakerState UpdateOnFailure(string operationKey, BreakerState state)
+    {
+        if (state.State == CircuitState.HalfOpen)
+        {
+            Log($"Circuit breaker for '{operationKey}' re-opened from HalfOpen on failed trial call");
+            return state with
+            {
+                State = CircuitState.Open,
+                FailureCount = state.FailureCount + 1,
+                OpenedAt = DateTime.UtcNow,
+                SuccessCount = 0
+            };
+        }
+
+        var newFailureCount = state.FailureCount + 1;
+        if (newFailureCount >= state.FailureThreshold)
+        {
+            Log($"Circuit breaker for '{operationKey}' opened after {newFailureCount} failures");
+            return state with
+            {
+                State = CircuitState.Open,
+                FailureCount = newFailureCount,
+                OpenedAt = DateTime.UtcNow
+            };
+        }
+
+        return state with { FailureCount = newFailureCount };
     }
 
     /// <summary>Responds with the current state and failure count for the requested operation key.</summary>

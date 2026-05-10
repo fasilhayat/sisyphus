@@ -23,19 +23,26 @@ public sealed class CircuitBreakerAttribute : Attribute
     public int MaxConcurrentCalls { get; }
 
     /// <summary>
-    /// Initializes a new instance of the CircuitBreakerAttribute class.
+    /// Initializes a new instance of the <see cref="CircuitBreakerAttribute"/> class.
+    /// Use <c>-1</c> for any parameter to inherit the value from <see cref="CircuitBreakerOptions"/>.
     /// </summary>
-    /// <param name="failureThreshold">The number of failures before opening the circuit. Default is 5.</param>
-    /// <param name="resetTimeout">The reset timeout in milliseconds. Default is 30000.</param>
-    /// <param name="maxConcurrentCalls">The max concurrent calls in half-open state. Default is 1.</param>
+    /// <param name="failureThreshold">The number of failures before opening the circuit. Use <c>-1</c> to use the configured default.</param>
+    /// <param name="resetTimeout">The reset timeout in milliseconds. Use <c>-1</c> to use the configured default.</param>
+    /// <param name="maxConcurrentCalls">The max concurrent calls in half-open state. Use <c>-1</c> to use the configured default.</param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when failureThreshold is less than 1, resetTimeout is negative, or maxConcurrentCalls is less than 1.
+    /// Thrown when an explicitly supplied value is invalid.
     /// </exception>
-    public CircuitBreakerAttribute(int failureThreshold = 5, int resetTimeout = 30000, int maxConcurrentCalls = 1)
+    public CircuitBreakerAttribute(
+        int failureThreshold = AttributeDefaults.UnsetInt,
+        int resetTimeout = AttributeDefaults.UnsetInt,
+        int maxConcurrentCalls = AttributeDefaults.UnsetInt)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(failureThreshold, 1);
-        ArgumentOutOfRangeException.ThrowIfNegative(resetTimeout);
-        ArgumentOutOfRangeException.ThrowIfLessThan(maxConcurrentCalls, 1);
+        if (failureThreshold != AttributeDefaults.UnsetInt)
+            ArgumentOutOfRangeException.ThrowIfLessThan(failureThreshold, 1);
+        if (resetTimeout != AttributeDefaults.UnsetInt)
+            ArgumentOutOfRangeException.ThrowIfNegative(resetTimeout);
+        if (maxConcurrentCalls != AttributeDefaults.UnsetInt)
+            ArgumentOutOfRangeException.ThrowIfLessThan(maxConcurrentCalls, 1);
 
         FailureThreshold = failureThreshold;
         ResetTimeout = resetTimeout;

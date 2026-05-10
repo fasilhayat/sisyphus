@@ -8,8 +8,11 @@ using System.Collections.Concurrent;
 using System.Reflection;
 
 /// <summary>
-/// A DispatchProxy that intercepts method calls and applies resilience policies (retry, circuit breaker, supervision, fan-out)
-/// based on attributes applied to the target method.
+/// A <see cref="DispatchProxy"/> that intercepts method calls and applies resilience policies (retry,
+/// circuit breaker, supervision, fan-out) based on attributes applied to the target method. Sentinel
+/// values (<c>-1</c>) on attribute parameters fall back to the configured global options. Supervisor
+/// actors are cached per method (for supervision) and per worker type (for fan-out) to avoid leaking
+/// actors across invocations.
 /// </summary>
 /// <typeparam name="T">The interface type to proxy.</typeparam>
 public class ResilientProxy<T> : DispatchProxy
@@ -21,6 +24,9 @@ public class ResilientProxy<T> : DispatchProxy
 
     private static Func<Type, object, ParameterInfo[], object[], object>? _globalMessageFactory;
     private static Func<object[], Type, Type, object>? _globalResultAggregator;
+
+    private readonly ConcurrentDictionary<MethodInfo, IActorRef> _supervisorCache = new();
+    private readonly ConcurrentDictionary<Type, IActorRef> _workerSupervisorCache = new();
 
     private Func<Type, object, ParameterInfo[], object[], object>? _instanceMessageFactory;
     private Func<object[], Type, Type, object>? _instanceResultAggregator;
@@ -44,6 +50,16 @@ public class ResilientProxy<T> : DispatchProxy
     /// Gets or sets the actor system used to create supervised and worker actors.
     /// </summary>
     public ActorSystem ActorSystem { get; set; } = default!;
+
+    /// <summary>
+    /// Gets or sets global retry options used as defaults when attributes omit values.
+    /// </summary>
+    public RetryOptions? RetryOptions { get; set; }
+
+    /// <summary>
+    /// Gets or sets global circuit breaker options used as defaults when attributes omit values.
+    /// </summary>
+    public CircuitBreakerOptions? CircuitBreakerOptions { get; set; }
 
     /// <summary>
     /// Gets or sets global supervision options used as defaults when attributes omit values.
@@ -155,7 +171,7 @@ public class ResilientProxy<T> : DispatchProxy
         var operation = CreateOperation<TResult>(implementedMethod, args);
 
         if (supervisionAttr is not null)
-            operation = WrapWithSupervision(operation, supervisionAttr);
+            operation = WrapWithSupervision(implementedMethod, operation, supervisionAttr);
 
         return await ExecuteResilienceStrategy<TResult>(operation, implementedMethod, breakerAttr, retryAttr, supervisionAttr, ct);
     }
@@ -172,11 +188,14 @@ public class ResilientProxy<T> : DispatchProxy
         return CancellationToken.None;
     }
 
+    /// <summary>Returns the configured ask timeout, falling back to a 30s default when no options are configured.</summary>
+    private TimeSpan AskTimeout => RetryOptions?.AskTimeout ?? TimeSpan.FromSeconds(30);
+
     /// <summary>Dispatches the operation to the appropriate resilience strategy based on configured attributes.</summary>
     private async Task<TResult> ExecuteResilienceStrategy<TResult>(Func<Task<object>> operation, MethodInfo implementedMethod, CircuitBreakerAttribute? breakerAttr, RetryAttribute? retryAttr, SupervisionAttribute? supervisionAttr, CancellationToken ct)
     {
         if (breakerAttr is not null)
-            return await ExecuteWithCircuitBreaker<TResult>($"{typeof(T).FullName}.{implementedMethod.Name}", operation, breakerAttr, retryAttr);
+            return await ExecuteWithCircuitBreaker<TResult>($"{typeof(T).FullName}.{implementedMethod.Name}", operation, breakerAttr, retryAttr, ct);
 
         if (retryAttr is not null)
             return await ExecuteWithRetry<TResult>(operation, retryAttr, ct);
@@ -187,12 +206,23 @@ public class ResilientProxy<T> : DispatchProxy
         throw new InvalidOperationException("No resilience attributes configured.");
     }
 
-    /// <summary>Creates a delegate that invokes the method and returns its typed result as an object.</summary>
+    /// <summary>Creates a delegate that invokes the method and returns its typed result as an object.
+    /// Unwraps <see cref="TargetInvocationException"/> so the original exception type reaches the
+    /// resilience pipeline (and the caller).</summary>
     private Func<Task<object>> CreateOperation<TResult>(MethodInfo implementedMethod, object[] args)
     {
         return async () =>
         {
-            var result = implementedMethod.Invoke(DecoratedInstance, args);
+            object? result;
+            try
+            {
+                result = implementedMethod.Invoke(DecoratedInstance, args);
+            }
+            catch (TargetInvocationException tie) when (tie.InnerException is not null)
+            {
+                throw tie.InnerException;
+            }
+
             if (result is null) throw new InvalidOperationException("Method invocation returned null");
 
             var task = (Task<TResult>)result;
@@ -201,60 +231,74 @@ public class ResilientProxy<T> : DispatchProxy
     }
 
     /// <summary>Executes the operation through the circuit breaker actor, falling back to retry on failure if configured.</summary>
-    private async Task<TResult> ExecuteWithCircuitBreaker<TResult>(string operationKey, Func<Task<object>> operation, CircuitBreakerAttribute breakerAttr, RetryAttribute? retryAttr)
+    private async Task<TResult> ExecuteWithCircuitBreaker<TResult>(string operationKey, Func<Task<object>> operation, CircuitBreakerAttribute breakerAttr, RetryAttribute? retryAttr, CancellationToken ct)
     {
-        var breakerResult = await CircuitBreakerActorRef.Ask<object>(
-            new CircuitBreakerActor.ExecuteWithBreaker(
-                operationKey,
-                operation,
-                breakerAttr.FailureThreshold,
-                TimeSpan.FromMilliseconds(breakerAttr.ResetTimeout),
-                breakerAttr.MaxConcurrentCalls));
+        ct.ThrowIfCancellationRequested();
+        var resolved = OptionsResolver.ResolveCircuitBreaker(breakerAttr, CircuitBreakerOptions);
 
-        if (breakerResult is Status.Failure failure)
-            return await HandleCircuitBreakerFailure<TResult>(failure, operation, retryAttr);
+        try
+        {
+            var breakerResult = await CircuitBreakerActorRef.Ask<object>(
+                new CircuitBreakerActor.ExecuteWithBreaker(
+                    operationKey,
+                    operation,
+                    resolved.FailureThreshold,
+                    TimeSpan.FromMilliseconds(resolved.ResetTimeoutMs),
+                    resolved.MaxConcurrentCalls),
+                AskTimeout,
+                ct);
 
-        return (TResult)breakerResult!;
+            return (TResult)breakerResult!;
+        }
+        catch (CircuitBreakerActor.CircuitBreakerOpenException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (retryAttr is not null)
+        {
+            return await HandleCircuitBreakerFailure<TResult>(ex, operation, retryAttr, ct);
+        }
     }
 
-    /// <summary>Handles a circuit breaker failure by optionally delegating to the retry strategy.</summary>
-    private async Task<TResult> HandleCircuitBreakerFailure<TResult>(Status.Failure failure, Func<Task<object>> operation, RetryAttribute? retryAttr)
+    /// <summary>Handles a circuit breaker failure by delegating to the retry strategy.</summary>
+    private async Task<TResult> HandleCircuitBreakerFailure<TResult>(Exception cause, Func<Task<object>> operation, RetryAttribute retryAttr, CancellationToken ct)
     {
-        if (failure.Cause is CircuitBreakerActor.CircuitBreakerOpenException || retryAttr is null)
-            throw failure.Cause;
-
-        var result = await ResilienceActorRef.Ask<object>(
-            new RetryActor.Execute(
-                operation,
-                retryAttr.MaxAttempts,
-                TimeSpan.FromMilliseconds(retryAttr.InitialDelay)));
-
-        if (result is Status.Failure retryFailure) throw retryFailure.Cause;
-
-        return (TResult)result!;
+        _ = cause;
+        return await ExecuteWithRetry<TResult>(operation, retryAttr, ct);
     }
 
-    /// <summary>Executes the operation with retry logic via the retry actor.</summary>
+    /// <summary>Executes the operation with retry logic via the retry actor, honoring the resolved retry options and exception filter.</summary>
     private async Task<TResult> ExecuteWithRetry<TResult>(Func<Task<object>> operation, RetryAttribute retryAttr, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
 
+        var resolved = OptionsResolver.ResolveRetry(retryAttr, RetryOptions);
+
         var result = await ResilienceActorRef.Ask<object>(
-            new RetryActor.Execute(operation, retryAttr.MaxAttempts, TimeSpan.FromMilliseconds(retryAttr.InitialDelay)));
+            new RetryActor.Execute(
+                operation,
+                resolved.MaxAttempts,
+                TimeSpan.FromMilliseconds(resolved.InitialDelayMs),
+                resolved.RetryOn),
+            AskTimeout,
+            ct);
 
         if (result is Status.Failure f) throw f.Cause;
 
         return (TResult)result!;
     }
 
-    /// <summary>Wraps the operation in a supervised actor that restarts on failure according to the supervision strategy.</summary>
-    private Func<Task<object>> WrapWithSupervision(Func<Task<object>> operation, SupervisionAttribute supervision)
+    /// <summary>
+    /// Wraps the operation in a supervised actor that restarts on failure according to the supervision strategy.
+    /// The supervisor is cached per method, so repeated invocations reuse the same long-lived actor.
+    /// </summary>
+    private Func<Task<object>> WrapWithSupervision(MethodInfo method, Func<Task<object>> operation, SupervisionAttribute supervision)
     {
+        var supervisor = _supervisorCache.GetOrAdd(method, m => CreateSupervisedRunner(m, supervision));
+
         return async () =>
         {
-            var props = SupervisionActor.CreateSupervisorProps(operation, supervision);
-            var supervisor = ActorSystem.ActorOf(props, $"supervised-op-{Guid.NewGuid():N}");
-            var result = await supervisor.Ask<object>(new RunOperation(), TimeSpan.FromSeconds(30));
+            var result = await supervisor.Ask<object>(new RunOperation(operation), AskTimeout);
 
             if (result is Status.Failure failure)
                 throw failure.Cause;
@@ -263,63 +307,42 @@ public class ResilientProxy<T> : DispatchProxy
         };
     }
 
+    /// <summary>Creates a long-lived supervisor actor for the supplied method using the resolved supervision options.</summary>
+    private IActorRef CreateSupervisedRunner(MethodInfo method, SupervisionAttribute supervision)
+    {
+        var resolved = OptionsResolver.ResolveSupervision(supervision, SupervisionOptions);
+        var props = SupervisionActor.CreateSupervisorProps(
+            resolved.Strategy, resolved.MaxRetries, resolved.BackoffMinMs, resolved.BackoffMaxMs, resolved.RandomFactor);
+        var actorName = $"supervised-{typeof(T).Name}-{method.Name}-{Guid.NewGuid():N}";
+        return ActorSystem.ActorOf(props, actorName);
+    }
+
     /// <summary>Orchestrates a fan-out operation by distributing work to multiple worker actors and aggregating results.</summary>
     private async Task<TResult> HandleFanOut<TResult>(MethodInfo method, object[] args, FanOutAttribute fanOut, SupervisionAttribute? supervision)
     {
-        var fanOutParams = ExtractFanOutParameters(fanOut, supervision);
+        var resolvedSupervision = OptionsResolver.ResolveSupervision(supervision, SupervisionOptions);
+        var maxWorkers = OptionsResolver.ResolveMaxWorkers(fanOut, FanOutOptions);
 
-        var supervisor = CreateWorkerSupervisor(fanOut.WorkerActorType, fanOutParams.Strategy, fanOutParams.BackoffMinMs, fanOutParams.BackoffMaxMs, fanOutParams.RandomFactor);
+        var supervisor = _workerSupervisorCache.GetOrAdd(
+            fanOut.WorkerActorType,
+            t => CreateWorkerSupervisor(t, resolvedSupervision));
 
         var splitParams = ExtractSplitParameters(method, args, fanOut.SplitParameterName);
-
-        var tasks = SendWorkToWorkers<TResult>(supervisor, fanOut.WorkerActorType, splitParams.SplitValues, splitParams.OtherArgs, method, fanOutParams.MaxWorkers);
+        var tasks = SendWorkToWorkers(supervisor, fanOut.WorkerActorType, splitParams.SplitValues, splitParams.OtherArgs, method, maxWorkers);
 
         var results = await Task.WhenAll(tasks);
         return AggregateResults<TResult>(results, fanOut.WorkerActorType);
     }
 
-    /// <summary>Extracts and resolves the fan-out parameters from attributes and global options.</summary>
-    private FanOutParameters ExtractFanOutParameters(FanOutAttribute fanOut, SupervisionAttribute? supervision)
-    {
-        return new FanOutParameters
-        {
-            MaxWorkers = ResolveMaxWorkers(fanOut),
-            Strategy = ResolveStrategy(supervision),
-            BackoffMinMs = ResolveBackoffMinMs(supervision),
-            BackoffMaxMs = ResolveBackoffMaxMs(supervision),
-            RandomFactor = ResolveRandomFactor(supervision)
-        };
-    }
-
-    /// <summary>Resolves the maximum number of workers from the attribute or global default.</summary>
-    private int ResolveMaxWorkers(FanOutAttribute fanOut)
-        => fanOut.MaxWorkers != 5 ? fanOut.MaxWorkers : (FanOutOptions?.DefaultMaxWorkers ?? 5);
-
-    /// <summary>Resolves the supervision strategy from the attribute or global default.</summary>
-    private SupervisionStrategy ResolveStrategy(SupervisionAttribute? supervision)
-        => supervision?.Strategy ?? SupervisionOptions?.DefaultStrategy ?? SupervisionStrategy.RestartWithBackoff;
-
-    /// <summary>Resolves the minimum backoff interval in milliseconds from the attribute or global default.</summary>
-    private int ResolveBackoffMinMs(SupervisionAttribute? supervision)
-        => supervision?.BackoffMinMs ?? SupervisionOptions?.DefaultBackoffMinMs ?? 2000;
-
-    /// <summary>Resolves the maximum backoff interval in milliseconds from the attribute or global default.</summary>
-    private int ResolveBackoffMaxMs(SupervisionAttribute? supervision)
-        => supervision?.BackoffMaxMs ?? SupervisionOptions?.DefaultBackoffMaxMs ?? 30000;
-
-    /// <summary>Resolves the random backoff factor from the attribute or global default.</summary>
-    private double ResolveRandomFactor(SupervisionAttribute? supervision)
-        => supervision?.RandomFactor ?? SupervisionOptions?.DefaultRandomFactor ?? 0.2;
-
-    /// <summary>Creates a worker supervisor using either backoff or pool supervision based on the strategy.</summary>
-    private IActorRef CreateWorkerSupervisor(Type workerActorType, SupervisionStrategy strategy, int minMs, int maxMs, double factor)
+    /// <summary>Creates a worker supervisor (cached per worker type) using the resolved supervision settings.</summary>
+    private IActorRef CreateWorkerSupervisor(Type workerActorType, ResolvedSupervision supervision)
     {
         var workerProps = Props.Create(() => (ActorBase)Activator.CreateInstance(workerActorType)!);
 
-        if (strategy == SupervisionStrategy.RestartWithBackoff)
-            return CreateBackoffSupervisor(workerActorType, workerProps, minMs, maxMs, factor);
+        if (supervision.Strategy == SupervisionStrategy.RestartWithBackoff)
+            return CreateBackoffSupervisor(workerActorType, workerProps, supervision.BackoffMinMs, supervision.BackoffMaxMs, supervision.RandomFactor);
 
-        return CreatePoolSupervisor(workerActorType, workerProps, MapToDirective(strategy));
+        return CreatePoolSupervisor(workerActorType, workerProps, MapToDirective(supervision.Strategy), supervision.MaxRetries);
     }
 
     /// <summary>Creates a backoff supervisor that restarts the worker with exponential backoff.</summary>
@@ -331,7 +354,7 @@ public class ResilientProxy<T> : DispatchProxy
             minBackoff: TimeSpan.FromMilliseconds(minMs),
             maxBackoff: TimeSpan.FromMilliseconds(maxMs),
             randomFactor: factor);
-        return ActorSystem.ActorOf(supervisorProps, $"{workerActorType.Name}-supervisor");
+        return ActorSystem.ActorOf(supervisorProps, $"{workerActorType.Name}-supervisor-{Guid.NewGuid():N}");
     }
 
     /// <summary>Maps a <see cref="SupervisionStrategy"/> to the corresponding Akka.NET <see cref="Directive"/>.</summary>
@@ -345,15 +368,15 @@ public class ResilientProxy<T> : DispatchProxy
     };
 
     /// <summary>Creates a pool-based supervisor with a one-for-one strategy using the given directive.</summary>
-    private IActorRef CreatePoolSupervisor(Type workerActorType, Props workerProps, Directive directive)
+    private IActorRef CreatePoolSupervisor(Type workerActorType, Props workerProps, Directive directive, int maxRetries)
     {
         var supervisionStrategy = new OneForOneStrategy(
-            maxNrOfRetries: -1,
+            maxNrOfRetries: maxRetries,
             withinTimeRange: TimeSpan.FromMinutes(1),
             localOnlyDecider: _ => directive);
 
         var poolProps = new WorkerPoolProps(workerProps, supervisionStrategy);
-        return ActorSystem.ActorOf(Props.Create(() => new WorkerPoolActor(poolProps)), $"{workerActorType.Name}-pool");
+        return ActorSystem.ActorOf(Props.Create(() => new WorkerPoolActor(poolProps)), $"{workerActorType.Name}-pool-{Guid.NewGuid():N}");
     }
 
     /// <summary>Extracts the split parameter value and remaining arguments from the method invocation.</summary>
@@ -375,7 +398,7 @@ public class ResilientProxy<T> : DispatchProxy
     }
 
     /// <summary>Sends work messages to worker actors via the supervisor and collects the result tasks.</summary>
-    private List<Task<object>> SendWorkToWorkers<TResult>(IActorRef supervisor, Type workerActorType, Array splitValues, object[] otherArgs, MethodInfo method, int maxWorkers)
+    private List<Task<object>> SendWorkToWorkers(IActorRef supervisor, Type workerActorType, Array splitValues, object[] otherArgs, MethodInfo method, int maxWorkers)
     {
         var tasks = new List<Task<object>>();
         var parameters = method.GetParameters();
@@ -384,7 +407,7 @@ public class ResilientProxy<T> : DispatchProxy
         {
             var splitValue = splitValues.GetValue(i)!;
             var message = CreateWorkerMessage(workerActorType, splitValue, parameters, otherArgs);
-            tasks.Add(supervisor.Ask<object>(message, TimeSpan.FromSeconds(30)));
+            tasks.Add(supervisor.Ask<object>(message, AskTimeout));
         }
 
         return tasks;
