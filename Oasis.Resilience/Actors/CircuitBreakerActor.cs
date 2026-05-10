@@ -168,27 +168,32 @@ public sealed class CircuitBreakerActor : ReceiveActor
         }
     }
 
-    /// <summary>Records a successful operation and resets the circuit breaker state.</summary>
+    /// <summary>Records a successful operation and resets the circuit breaker state. If the breaker
+    /// entry doesn't exist (e.g. the message arrived after a state reset), the message is ignored —
+    /// the entry will be re-created on the next <see cref="HandleExecuteWithBreaker"/> call with the
+    /// correct configuration from the originating attribute.</summary>
     private void HandleSuccess(Success msg)
     {
-        _breakers.AddOrUpdate(
-            msg.OperationKey,
-            key => new BreakerState(CircuitState.Closed, 0, 1, null, 1, TimeSpan.FromSeconds(30), 5),
-            (key, state) => state.State == CircuitState.HalfOpen
-                ? state with { State = CircuitState.Closed, FailureCount = 0, SuccessCount = state.SuccessCount + 1 }
-                : state with { State = CircuitState.Closed, FailureCount = 0 });
+        if (!_breakers.TryGetValue(msg.OperationKey, out var existing)) return;
 
+        var updated = existing.State == CircuitState.HalfOpen
+            ? existing with { State = CircuitState.Closed, FailureCount = 0, SuccessCount = existing.SuccessCount + 1 }
+            : existing with { State = CircuitState.Closed, FailureCount = 0 };
+
+        _breakers.TryUpdate(msg.OperationKey, updated, existing);
         Log($"Circuit breaker for '{msg.OperationKey}' is now Closed");
     }
 
     /// <summary>Records a failed operation. In <see cref="CircuitState.HalfOpen"/> the circuit re-opens
-    /// immediately; in <see cref="CircuitState.Closed"/> it opens once the failure threshold is reached.</summary>
+    /// immediately; in <see cref="CircuitState.Closed"/> it opens once the failure threshold is reached.
+    /// If the breaker entry doesn't exist the message is ignored (configuration-less defaults could
+    /// otherwise be applied silently).</summary>
     private void HandleFailure(Failure msg)
     {
-        _breakers.AddOrUpdate(
-            msg.OperationKey,
-            key => new BreakerState(CircuitState.Open, 1, 0, DateTime.UtcNow, 1, TimeSpan.FromSeconds(30), 5),
-            (key, state) => UpdateOnFailure(key, state));
+        if (!_breakers.TryGetValue(msg.OperationKey, out var existing)) return;
+
+        var updated = UpdateOnFailure(msg.OperationKey, existing);
+        _breakers.TryUpdate(msg.OperationKey, updated, existing);
     }
 
     /// <summary>Computes the next breaker state after a failure, honoring the half-open re-open rule.</summary>

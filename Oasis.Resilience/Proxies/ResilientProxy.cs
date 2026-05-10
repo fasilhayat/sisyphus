@@ -15,18 +15,20 @@ using System.Reflection;
 /// actors across invocations.
 /// </summary>
 /// <typeparam name="T">The interface type to proxy.</typeparam>
-public class ResilientProxy<T> : DispatchProxy
+public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
 {
     private static readonly ConcurrentDictionary<MethodInfo, RetryAttribute?> RetryAttributeCache = new();
     private static readonly ConcurrentDictionary<MethodInfo, CircuitBreakerAttribute?> CircuitBreakerAttributeCache = new();
     private static readonly ConcurrentDictionary<MethodInfo, SupervisionAttribute?> SupervisionAttributeCache = new();
     private static readonly ConcurrentDictionary<MethodInfo, FanOutAttribute?> FanOutAttributeCache = new();
+    private static readonly ConcurrentDictionary<MethodInfo, MethodInfo> ImplementedMethodCache = new();
+    private static readonly ConcurrentDictionary<MethodInfo, MethodInfo> InvokeGenericMethodCache = new();
 
-    private static Func<Type, object, ParameterInfo[], object[], object>? _globalMessageFactory;
-    private static Func<object[], Type, Type, object>? _globalResultAggregator;
+    private static volatile Func<Type, object, ParameterInfo[], object[], object>? _globalMessageFactory;
+    private static volatile Func<object[], Type, Type, object>? _globalResultAggregator;
 
-    private readonly ConcurrentDictionary<MethodInfo, IActorRef> _supervisorCache = new();
-    private readonly ConcurrentDictionary<Type, IActorRef> _workerSupervisorCache = new();
+    private readonly ConcurrentDictionary<MethodInfo, Lazy<IActorRef>> _supervisorCache = new();
+    private readonly ConcurrentDictionary<Type, Lazy<IActorRef>> _workerSupervisorCache = new();
 
     private Func<Type, object, ParameterInfo[], object[], object>? _instanceMessageFactory;
     private Func<object[], Type, Type, object>? _instanceResultAggregator;
@@ -134,30 +136,39 @@ public class ResilientProxy<T> : DispatchProxy
     private static bool HasResilienceAttributes(RetryAttribute? retry, CircuitBreakerAttribute? breaker, SupervisionAttribute? supervision, FanOutAttribute? fanOut)
         => retry is not null || breaker is not null || supervision is not null || fanOut is not null;
 
-    /// <summary>Resolves the implemented method from the decorated instance matching the target method signature.</summary>
+    /// <summary>Resolves the implemented method from the decorated instance matching the target method signature.
+    /// Cached per <see cref="MethodInfo"/> so the reflection lookup runs once per interface method.</summary>
     private MethodInfo ResolveImplementedMethod(MethodInfo targetMethod)
     {
-        var method = DecoratedInstance!.GetType().GetMethod(targetMethod.Name,
-            targetMethod.GetParameters().Select(p => p.ParameterType).ToArray());
-        return method ?? throw new InvalidOperationException($"Implementation method not found: {targetMethod.Name}");
+        return ImplementedMethodCache.GetOrAdd(targetMethod, tm =>
+        {
+            var method = DecoratedInstance!.GetType().GetMethod(tm.Name,
+                tm.GetParameters().Select(p => p.ParameterType).ToArray());
+            return method ?? throw new InvalidOperationException($"Implementation method not found: {tm.Name}");
+        });
     }
 
     /// <summary>
     /// Routes the invocation to the generic resilience pipeline, resolving the return type and invoking
-    /// <see cref="InvokeGeneric{TResult}"/> via reflection.
+    /// <see cref="InvokeGeneric{TResult}"/> via reflection. The constructed generic <see cref="MethodInfo"/>
+    /// is cached per implemented method to avoid the cost of <c>MakeGenericMethod</c> on every call.
     /// </summary>
     private object InvokeResilient(MethodInfo implementedMethod, object?[]? args, RetryAttribute? retryAttr, CircuitBreakerAttribute? breakerAttr, SupervisionAttribute? supervisionAttr, FanOutAttribute? fanOutAttr)
     {
-        var returnType = implementedMethod.ReturnType;
+        var method = InvokeGenericMethodCache.GetOrAdd(implementedMethod, BuildInvokeGeneric);
+        return method.Invoke(this, [implementedMethod, args, retryAttr, breakerAttr, supervisionAttr, fanOutAttr])!;
+    }
 
+    /// <summary>Builds the generic <c>InvokeGeneric&lt;TResult&gt;</c> <see cref="MethodInfo"/> for the implemented method.</summary>
+    private static MethodInfo BuildInvokeGeneric(MethodInfo implementedMethod)
+    {
+        var returnType = implementedMethod.ReturnType;
         if (!returnType.IsGenericType)
             throw new InvalidOperationException("Only Task<T> supported.");
 
         var resultType = returnType.GetGenericArguments()[0];
-        var method = typeof(ResilientProxy<T>).GetMethod(nameof(InvokeGeneric), BindingFlags.NonPublic | BindingFlags.Instance)!
-                .MakeGenericMethod(resultType);
-
-        return method.Invoke(this, [implementedMethod, args, retryAttr, breakerAttr, supervisionAttr, fanOutAttr])!;
+        return typeof(ResilientProxy<T>).GetMethod(nameof(InvokeGeneric), BindingFlags.NonPublic | BindingFlags.Instance)!
+            .MakeGenericMethod(resultType);
     }
 
     /// <summary>Invokes the resilience pipeline for a given return type, dispatching to fan-out or wrapping operation with supervision as configured.</summary>
@@ -294,7 +305,8 @@ public class ResilientProxy<T> : DispatchProxy
     /// </summary>
     private Func<Task<object>> WrapWithSupervision(MethodInfo method, Func<Task<object>> operation, SupervisionAttribute supervision)
     {
-        var supervisor = _supervisorCache.GetOrAdd(method, m => CreateSupervisedRunner(m, supervision));
+        var supervisor = _supervisorCache.GetOrAdd(method, m =>
+            new Lazy<IActorRef>(() => CreateSupervisedRunner(m, supervision), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
 
         return async () =>
         {
@@ -325,7 +337,7 @@ public class ResilientProxy<T> : DispatchProxy
 
         var supervisor = _workerSupervisorCache.GetOrAdd(
             fanOut.WorkerActorType,
-            t => CreateWorkerSupervisor(t, resolvedSupervision));
+            t => new Lazy<IActorRef>(() => CreateWorkerSupervisor(t, resolvedSupervision), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
 
         var splitParams = ExtractSplitParameters(method, args, fanOut.SplitParameterName);
         var tasks = SendWorkToWorkers(supervisor, fanOut.WorkerActorType, splitParams.SplitValues, splitParams.OtherArgs, method, maxWorkers);
@@ -397,20 +409,48 @@ public class ResilientProxy<T> : DispatchProxy
         };
     }
 
-    /// <summary>Sends work messages to worker actors via the supervisor and collects the result tasks.</summary>
+    /// <summary>Sends work messages to worker actors via the supervisor and collects the result tasks.
+    /// All <paramref name="splitValues"/> are processed; <paramref name="maxWorkers"/> caps the number
+    /// of in-flight requests via a semaphore so the actor system isn't flooded for very large inputs.</summary>
     private List<Task<object>> SendWorkToWorkers(IActorRef supervisor, Type workerActorType, Array splitValues, object[] otherArgs, MethodInfo method, int maxWorkers)
     {
-        var tasks = new List<Task<object>>();
+        var tasks = new List<Task<object>>(splitValues.Length);
         var parameters = method.GetParameters();
+        var concurrency = Math.Max(1, maxWorkers);
+        var gate = new SemaphoreSlim(concurrency, concurrency);
+        var askTimeout = AskTimeout;
 
-        for (int i = 0; i < splitValues.Length && i < maxWorkers; i++)
+        for (int i = 0; i < splitValues.Length; i++)
         {
             var splitValue = splitValues.GetValue(i)!;
             var message = CreateWorkerMessage(workerActorType, splitValue, parameters, otherArgs);
-            tasks.Add(supervisor.Ask<object>(message, AskTimeout));
+            tasks.Add(SendThrottled(supervisor, message, askTimeout, gate));
         }
 
+        _ = ReleaseGateWhenAllComplete(tasks, gate);
         return tasks;
+    }
+
+    /// <summary>Awaits a slot in <paramref name="gate"/> before issuing the Ask and releases it when the reply arrives.</summary>
+    private static async Task<object> SendThrottled(IActorRef supervisor, object message, TimeSpan askTimeout, SemaphoreSlim gate)
+    {
+        await gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            return await supervisor.Ask<object>(message, askTimeout).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>Disposes the throttling semaphore once every queued work item has finished.</summary>
+    private static async Task ReleaseGateWhenAllComplete(List<Task<object>> tasks, SemaphoreSlim gate)
+    {
+        try { await Task.WhenAll(tasks).ConfigureAwait(false); }
+        catch { /* individual task failures surface to the aggregator */ }
+        finally { gate.Dispose(); }
     }
 
     /// <summary>Creates a worker message using the registered message factory.</summary>
@@ -431,5 +471,38 @@ public class ResilientProxy<T> : DispatchProxy
             return (TResult)aggregator(results, workerType, typeof(TResult));
 
         throw new InvalidOperationException($"No result aggregator registered for worker type '{workerType.Name}'. Register one using RegisterResultAggregator.");
+    }
+
+    /// <summary>Synchronous disposal that delegates to <see cref="DisposeAsync"/>; provided so the
+    /// proxy is compatible with synchronous DI scope disposal.</summary>
+    public void Dispose()
+    {
+        DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5));
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>Stops every cached supervisor actor and clears the per-instance caches.
+    /// The shared <see cref="ResilienceActorRef"/> and <see cref="CircuitBreakerActorRef"/> are owned
+    /// by the <c>ResilienceRuntime</c> and intentionally not stopped here.</summary>
+    public async ValueTask DisposeAsync()
+    {
+        await StopCachedActorsAsync(_supervisorCache.Values).ConfigureAwait(false);
+        await StopCachedActorsAsync(_workerSupervisorCache.Values).ConfigureAwait(false);
+        _supervisorCache.Clear();
+        _workerSupervisorCache.Clear();
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>Gracefully stops every materialised actor in <paramref name="lazyRefs"/>.</summary>
+    private async Task StopCachedActorsAsync(ICollection<Lazy<IActorRef>> lazyRefs)
+    {
+        if (ActorSystem is null) return;
+
+        foreach (var lazy in lazyRefs)
+        {
+            if (!lazy.IsValueCreated) continue;
+            try { await lazy.Value.GracefulStop(TimeSpan.FromSeconds(2)).ConfigureAwait(false); }
+            catch { /* swallow — disposal is best-effort */ }
+        }
     }
 }

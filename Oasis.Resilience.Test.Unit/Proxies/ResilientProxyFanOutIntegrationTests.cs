@@ -73,4 +73,32 @@ public class ResilientProxyFanOutIntegrationTests
 
         Assert.Equal(new[] { 4, 9, 16, 25 }, result);
     }
+
+    /// <summary>
+    /// Verifies that fan-out processes ALL input values even when there are more items than
+    /// <c>maxWorkers</c> (the previous implementation silently truncated extras).
+    /// </summary>
+    [Fact]
+    public async Task Proxy_should_process_all_items_when_input_exceeds_maxWorkers()
+    {
+        ResilientProxy<IMathService>.RegisterMessageFactory((workerType, splitValue, parameters, otherArgs) =>
+            new SquareJob((int)splitValue));
+
+        ResilientProxy<IMathService>.RegisterResultAggregator((results, workerType, returnType) =>
+            results.Select(r => (int)r).OrderBy(x => x).ToArray());
+
+        var services = new ServiceCollection();
+        services.AddResilience(retry => retry.LogLevel = LogLevel.None);
+        services.AddResilientService<IMathService, MathService>();
+
+        using var provider = services.BuildServiceProvider();
+        var service = provider.GetRequiredService<IMathService>();
+
+        var input = Enumerable.Range(1, 12).ToArray();
+        var expected = input.Select(i => i * i).OrderBy(x => x).ToArray();
+
+        var result = await service.SquareAllAsync(input);
+
+        Assert.Equal(expected, result);
+    }
 }

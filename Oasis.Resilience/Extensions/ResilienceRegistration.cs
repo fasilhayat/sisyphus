@@ -1,6 +1,7 @@
 ﻿namespace Oasis.Resilience;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Oasis.Resilience.Proxies;
 using System.Reflection;
@@ -46,7 +47,7 @@ public static class ResilienceRegistration
             configureFanOutOptions?.Invoke(options);
         });
 
-        services.AddSingleton<ResilienceRuntime>();
+        services.TryAddSingleton<ResilienceRuntime>();
         return services;
     }
 
@@ -63,7 +64,7 @@ public static class ResilienceRegistration
     {
         services.AddSingleton<TImplementation>();
 
-        services.AddSingleton(sp =>
+        services.TryAddSingleton(sp =>
         {
             var runtime = sp.GetRequiredService<ResilienceRuntime>();
             var implementation = sp.GetRequiredService<TImplementation>();
