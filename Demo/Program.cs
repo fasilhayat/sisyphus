@@ -1,43 +1,12 @@
 ﻿using Demo.Bonds;
 using Demo.Calendar;
 using Demo.Holidays;
-using Demo.Holidays.Actors;
 using Demo.Inventory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Oasis.Resilience;
-using Oasis.Resilience.Proxies;
 
-// Configure message factory and result aggregator for fan-out operations.
 var services = new ServiceCollection();
-
-ResilientProxy<IHolidayService>.RegisterMessageFactory((workerType, splitValue, parameters, otherArgs) =>
-{
-    if (workerType == typeof(HolidayWorkerActor))
-    {
-        var year = (int)splitValue;
-        var country = (string)otherArgs[0];
-        return new HolidayWorkerActor.ProcessYear(year, country);
-    }
-    throw new InvalidOperationException($"Unknown worker type: {workerType.Name}");
-});
-
-ResilientProxy<IHolidayService>.RegisterResultAggregator((results, workerType, returnType) =>
-{
-    if (returnType == typeof(Dictionary<int, string>) && workerType == typeof(HolidayWorkerActor))
-    {
-        var dict = new Dictionary<int, string>();
-        foreach (var result in results)
-        {
-            if (result is HolidayWorkerActor.YearProcessed processed)
-            {
-                dict[processed.Year] = processed.Content;
-            }
-        }
-        return dict;
-    }
-    throw new InvalidOperationException($"Unsupported return type {returnType.Name} for worker {workerType.Name}");
-});
 
 services.AddResilience(options =>
 {

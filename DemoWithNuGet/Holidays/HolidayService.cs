@@ -41,12 +41,13 @@ public class HolidayService : IHolidayService
     }
 
     /// <summary>
-    /// Retrieves holidays for multiple years. The AOP interceptor routes fan-out calls to worker actors instead of this method body.
+    /// Retrieves holidays for multiple years in parallel. The proxy fan-out intercepts this call,
+    /// invokes the method body once per year, and merges all partial results into a single dictionary.
     /// </summary>
     /// <param name="years">The years to retrieve holidays for.</param>
     /// <param name="country">The country code.</param>
-    /// <returns>A task containing a dictionary mapping year to holiday data.</returns>
-    [FanOut(workerActorType: typeof(Actors.HolidayWorkerActor), splitParameterName: "years", maxWorkers: 5)]
+    /// <returns>A task containing a dictionary mapping each year to its holiday data.</returns>
+    [FanOut(maxWorkers: 5)]
     [Supervision(strategy: SupervisionStrategy.RestartWithBackoff)]
     public async Task<Dictionary<int, string>> GetHolidaysForYearsAsync(int[] years, string country)
     {

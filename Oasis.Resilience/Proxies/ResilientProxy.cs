@@ -4,6 +4,7 @@ using Actors;
 using Akka.Actor;
 using Akka.Pattern;
 using Attributes;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
 
@@ -24,14 +25,7 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
     private static readonly ConcurrentDictionary<MethodInfo, MethodInfo> ImplementedMethodCache = new();
     private static readonly ConcurrentDictionary<MethodInfo, MethodInfo> InvokeGenericMethodCache = new();
 
-    private static volatile Func<Type, object, ParameterInfo[], object[], object>? _globalMessageFactory;
-    private static volatile Func<object[], Type, Type, object>? _globalResultAggregator;
-
     private readonly ConcurrentDictionary<MethodInfo, Lazy<IActorRef>> _supervisorCache = new();
-    private readonly ConcurrentDictionary<Type, Lazy<IActorRef>> _workerSupervisorCache = new();
-
-    private Func<Type, object, ParameterInfo[], object[], object>? _instanceMessageFactory;
-    private Func<object[], Type, Type, object>? _instanceResultAggregator;
 
     /// <summary>
     /// Gets or sets the decorated service instance that method calls are forwarded to.
@@ -72,42 +66,6 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
     /// Gets or sets global fan-out options used as defaults when attributes omit values.
     /// </summary>
     public FanOutOptions? FanOutOptions { get; set; }
-
-    /// <summary>
-    /// Registers a global message factory used to create worker messages for fan-out operations.
-    /// </summary>
-    /// <param name="factory">A function that creates a message from worker type, split value, parameters, and other args.</param>
-    public static void RegisterMessageFactory(Func<Type, object, ParameterInfo[], object[], object> factory)
-    {
-        _globalMessageFactory = factory;
-    }
-
-    /// <summary>
-    /// Registers a global result aggregator used to combine worker results from fan-out operations.
-    /// </summary>
-    /// <param name="aggregator">A function that aggregates results into the expected return type.</param>
-    public static void RegisterResultAggregator(Func<object[], Type, Type, object> aggregator)
-    {
-        _globalResultAggregator = aggregator;
-    }
-
-    /// <summary>
-    /// Sets an instance-level message factory, overriding the global factory for this proxy instance.
-    /// </summary>
-    /// <param name="factory">A function that creates a message from worker type, split value, parameters, and other args.</param>
-    public void SetMessageFactory(Func<Type, object, ParameterInfo[], object[], object> factory)
-    {
-        _instanceMessageFactory = factory;
-    }
-
-    /// <summary>
-    /// Sets an instance-level result aggregator, overriding the global aggregator for this proxy instance.
-    /// </summary>
-    /// <param name="aggregator">A function that aggregates results into the expected return type.</param>
-    public void SetResultAggregator(Func<object[], Type, Type, object> aggregator)
-    {
-        _instanceResultAggregator = aggregator;
-    }
 
     /// <summary>
     /// Intercepts the method invocation, resolves resilience attributes, and delegates to the appropriate handler.
@@ -177,7 +135,7 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
         var ct = ExtractCancellationToken(args, implementedMethod);
 
         if (fanOutAttr is not null)
-            return await HandleFanOut<TResult>(implementedMethod, args, fanOutAttr, supervisionAttr);
+            return await HandleFanOut<TResult>(implementedMethod, args, fanOutAttr);
 
         var operation = CreateOperation<TResult>(implementedMethod, args);
 
@@ -329,115 +287,92 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
         return ActorSystem.ActorOf(props, actorName);
     }
 
-    /// <summary>Orchestrates a fan-out operation by distributing work to multiple worker actors and aggregating results.</summary>
-    private async Task<TResult> HandleFanOut<TResult>(MethodInfo method, object[] args, FanOutAttribute fanOut, SupervisionAttribute? supervision)
+    /// <summary>
+    /// Orchestrates a fan-out operation by invoking the implementation once per item in the split
+    /// array parameter and merging the partial results. Concurrency is capped by <paramref name="fanOut"/>
+    /// <c>MaxWorkers</c>; all items are always processed regardless of array size.
+    /// </summary>
+    private async Task<TResult> HandleFanOut<TResult>(MethodInfo method, object[] args, FanOutAttribute fanOut)
     {
-        var resolvedSupervision = OptionsResolver.ResolveSupervision(supervision, SupervisionOptions);
         var maxWorkers = OptionsResolver.ResolveMaxWorkers(fanOut, FanOutOptions);
-
-        var supervisor = _workerSupervisorCache.GetOrAdd(
-            fanOut.WorkerActorType,
-            t => new Lazy<IActorRef>(() => CreateWorkerSupervisor(t, resolvedSupervision), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
-
-        var splitParams = ExtractSplitParameters(method, args, fanOut.SplitParameterName);
-        var tasks = SendWorkToWorkers(supervisor, fanOut.WorkerActorType, splitParams.SplitValues, splitParams.OtherArgs, method, maxWorkers);
-
-        var results = await Task.WhenAll(tasks);
-        return AggregateResults<TResult>(results, fanOut.WorkerActorType);
-    }
-
-    /// <summary>Creates a worker supervisor (cached per worker type) using the resolved supervision settings.</summary>
-    private IActorRef CreateWorkerSupervisor(Type workerActorType, ResolvedSupervision supervision)
-    {
-        var workerProps = Props.Create(() => (ActorBase)Activator.CreateInstance(workerActorType)!);
-
-        if (supervision.Strategy == SupervisionStrategy.RestartWithBackoff)
-            return CreateBackoffSupervisor(workerActorType, workerProps, supervision.BackoffMinMs, supervision.BackoffMaxMs, supervision.RandomFactor);
-
-        return CreatePoolSupervisor(workerActorType, workerProps, MapToDirective(supervision.Strategy), supervision.MaxRetries);
-    }
-
-    /// <summary>Creates a backoff supervisor that restarts the worker with exponential backoff.</summary>
-    private IActorRef CreateBackoffSupervisor(Type workerActorType, Props workerProps, int minMs, int maxMs, double factor)
-    {
-        var supervisorProps = BackoffSupervisor.Props(
-            childProps: workerProps,
-            childName: workerActorType.Name,
-            minBackoff: TimeSpan.FromMilliseconds(minMs),
-            maxBackoff: TimeSpan.FromMilliseconds(maxMs),
-            randomFactor: factor);
-        return ActorSystem.ActorOf(supervisorProps, $"{workerActorType.Name}-supervisor-{Guid.NewGuid():N}");
-    }
-
-    /// <summary>Maps a <see cref="SupervisionStrategy"/> to the corresponding Akka.NET <see cref="Directive"/>.</summary>
-    private static Directive MapToDirective(SupervisionStrategy strategy) => strategy switch
-    {
-        SupervisionStrategy.Restart => Directive.Restart,
-        SupervisionStrategy.Stop => Directive.Stop,
-        SupervisionStrategy.Escalate => Directive.Escalate,
-        SupervisionStrategy.Resume => Directive.Resume,
-        _ => Directive.Restart
-    };
-
-    /// <summary>Creates a pool-based supervisor with a one-for-one strategy using the given directive.</summary>
-    private IActorRef CreatePoolSupervisor(Type workerActorType, Props workerProps, Directive directive, int maxRetries)
-    {
-        var supervisionStrategy = new OneForOneStrategy(
-            maxNrOfRetries: maxRetries,
-            withinTimeRange: TimeSpan.FromMinutes(1),
-            localOnlyDecider: _ => directive);
-
-        var poolProps = new WorkerPoolProps(workerProps, supervisionStrategy);
-        return ActorSystem.ActorOf(Props.Create(() => new WorkerPoolActor(poolProps)), $"{workerActorType.Name}-pool-{Guid.NewGuid():N}");
-    }
-
-    /// <summary>Extracts the split parameter value and remaining arguments from the method invocation.</summary>
-    private SplitParametersResult ExtractSplitParameters(MethodInfo method, object[] args, string splitParameterName)
-    {
         var parameters = method.GetParameters();
-        var splitParamIndex = Array.FindIndex(parameters, p => p.Name == splitParameterName);
-        if (splitParamIndex == -1)
-            throw new InvalidOperationException($"Split parameter '{splitParameterName}' not found.");
+        var splitIndex = FindSplitParameterIndex(parameters, fanOut.SplitOn);
+        var splitArray = (Array)args[splitIndex];
 
-        var splitValues = (Array)args[splitParamIndex];
-        var otherArgs = args.Where((_, i) => i != splitParamIndex).ToArray();
+        var gate = new SemaphoreSlim(Math.Max(1, maxWorkers), Math.Max(1, maxWorkers));
+        var tasks = new List<Task<TResult>>(splitArray.Length);
 
-        return new SplitParametersResult
-        {
-            SplitValues = splitValues,
-            OtherArgs = otherArgs
-        };
+        for (int i = 0; i < splitArray.Length; i++)
+            tasks.Add(InvokeForSingleItem<TResult>(method, args, splitIndex, splitArray.GetValue(i)!, gate));
+
+        _ = DisposeGateWhenComplete(tasks, gate);
+
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        return AggregateBuiltIn<TResult>(results);
     }
 
-    /// <summary>Sends work messages to worker actors via the supervisor and collects the result tasks.
-    /// All <paramref name="splitValues"/> are processed; <paramref name="maxWorkers"/> caps the number
-    /// of in-flight requests via a semaphore so the actor system isn't flooded for very large inputs.</summary>
-    private List<Task<object>> SendWorkToWorkers(IActorRef supervisor, Type workerActorType, Array splitValues, object[] otherArgs, MethodInfo method, int maxWorkers)
+    /// <summary>
+    /// Resolves which parameter index to split on. When <paramref name="splitOn"/> is <c>null</c>,
+    /// auto-detects the single array parameter on the method.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the named parameter is not found, no array parameter exists, or multiple array
+    /// parameters are present and <paramref name="splitOn"/> was not specified.
+    /// </exception>
+    private static int FindSplitParameterIndex(ParameterInfo[] parameters, string? splitOn)
     {
-        var tasks = new List<Task<object>>(splitValues.Length);
-        var parameters = method.GetParameters();
-        var concurrency = Math.Max(1, maxWorkers);
-        var gate = new SemaphoreSlim(concurrency, concurrency);
-        var askTimeout = AskTimeout;
-
-        for (int i = 0; i < splitValues.Length; i++)
+        if (splitOn is not null)
         {
-            var splitValue = splitValues.GetValue(i)!;
-            var message = CreateWorkerMessage(workerActorType, splitValue, parameters, otherArgs);
-            tasks.Add(SendThrottled(supervisor, message, askTimeout, gate));
+            var named = Array.FindIndex(parameters, p => p.Name == splitOn);
+            if (named == -1)
+                throw new InvalidOperationException(
+                    $"[FanOut] split parameter '{splitOn}' not found. Verify the 'splitOn' value matches the parameter name exactly.");
+            return named;
         }
 
-        _ = ReleaseGateWhenAllComplete(tasks, gate);
-        return tasks;
+        var arrayParams = Array.FindAll(parameters, p => p.ParameterType.IsArray);
+        if (arrayParams.Length == 0)
+            throw new InvalidOperationException(
+                "[FanOut] could not auto-detect a split parameter: no array parameter found. " +
+                "Add an array parameter or specify 'splitOn' in [FanOut].");
+        if (arrayParams.Length > 1)
+            throw new InvalidOperationException(
+                $"[FanOut] found {arrayParams.Length} array parameters and cannot auto-detect which to split. " +
+                "Specify 'splitOn' in [FanOut].");
+
+        return Array.FindIndex(parameters, p => p.Name == arrayParams[0].Name);
     }
 
-    /// <summary>Awaits a slot in <paramref name="gate"/> before issuing the Ask and releases it when the reply arrives.</summary>
-    private static async Task<object> SendThrottled(IActorRef supervisor, object message, TimeSpan askTimeout, SemaphoreSlim gate)
+    /// <summary>
+    /// Waits for a slot in <paramref name="gate"/>, invokes the implementation with a single-element
+    /// array replacing the split parameter, and releases the slot when done.
+    /// </summary>
+    private async Task<TResult> InvokeForSingleItem<TResult>(MethodInfo method, object[] args, int splitIndex, object item, SemaphoreSlim gate)
     {
         await gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            return await supervisor.Ask<object>(message, askTimeout).ConfigureAwait(false);
+            var elementType = args[splitIndex].GetType().GetElementType()!;
+            var singleItemArray = Array.CreateInstance(elementType, 1);
+            singleItemArray.SetValue(item, 0);
+
+            var callArgs = (object[])args.Clone();
+            callArgs[splitIndex] = singleItemArray;
+
+            object? result;
+            try
+            {
+                result = method.Invoke(DecoratedInstance, callArgs);
+            }
+            catch (TargetInvocationException tie) when (tie.InnerException is not null)
+            {
+                throw tie.InnerException;
+            }
+
+            if (result is null)
+                throw new InvalidOperationException($"[FanOut] method '{method.Name}' returned null for a single-item invocation.");
+
+            return await ((Task<TResult>)result).ConfigureAwait(false);
         }
         finally
         {
@@ -445,32 +380,71 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
         }
     }
 
-    /// <summary>Disposes the throttling semaphore once every queued work item has finished.</summary>
-    private static async Task ReleaseGateWhenAllComplete(List<Task<object>> tasks, SemaphoreSlim gate)
+    /// <summary>
+    /// Merges <paramref name="partialResults"/> into a single <typeparamref name="TResult"/>.
+    /// Supported return types: <c>Dictionary&lt;TKey,TValue&gt;</c> (entries merged),
+    /// <c>T[]</c> (elements concatenated), <c>List&lt;T&gt;</c> (elements concatenated).
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <typeparamref name="TResult"/> is not a supported aggregation type.
+    /// </exception>
+    private static TResult AggregateBuiltIn<TResult>(TResult[] partialResults)
+    {
+        if (partialResults.Length == 0) return default!;
+        if (partialResults.Length == 1) return partialResults[0];
+
+        var resultType = typeof(TResult);
+
+        if (typeof(IDictionary).IsAssignableFrom(resultType))
+            return MergeDictionaries<TResult>(partialResults, resultType);
+
+        if (resultType.IsArray)
+            return ConcatArrays<TResult>(partialResults, resultType);
+
+        if (resultType.IsGenericType && resultType.GetGenericTypeDefinition() == typeof(List<>))
+            return ConcatLists<TResult>(partialResults, resultType);
+
+        throw new InvalidOperationException(
+            $"[FanOut] cannot automatically aggregate return type '{resultType.Name}'. " +
+            "Supported types: Dictionary<TKey,TValue>, T[], List<T>.");
+    }
+
+    /// <summary>Merges partial dictionary results into a single dictionary instance.</summary>
+    private static TResult MergeDictionaries<TResult>(TResult[] partialResults, Type resultType)
+    {
+        var merged = (IDictionary)Activator.CreateInstance(resultType)!;
+        foreach (var partial in partialResults)
+            foreach (DictionaryEntry entry in (IDictionary)(object)partial!)
+                merged[entry.Key] = entry.Value;
+        return (TResult)(object)merged;
+    }
+
+    /// <summary>Concatenates partial array results into a single array.</summary>
+    private static TResult ConcatArrays<TResult>(TResult[] partialResults, Type resultType)
+    {
+        var elementType = resultType.GetElementType()!;
+        var all = partialResults.Cast<IEnumerable>().SelectMany(e => e.Cast<object?>()).ToArray();
+        var arr = Array.CreateInstance(elementType, all.Length);
+        for (int i = 0; i < all.Length; i++) arr.SetValue(all[i], i);
+        return (TResult)(object)arr;
+    }
+
+    /// <summary>Concatenates partial list results into a single list.</summary>
+    private static TResult ConcatLists<TResult>(TResult[] partialResults, Type resultType)
+    {
+        var list = (IList)Activator.CreateInstance(resultType)!;
+        foreach (var partial in partialResults)
+            foreach (var item in (IEnumerable)(object)partial!)
+                list.Add(item);
+        return (TResult)(object)list;
+    }
+
+    /// <summary>Disposes the throttling gate once all fan-out tasks have settled.</summary>
+    private static async Task DisposeGateWhenComplete<TResult>(List<Task<TResult>> tasks, SemaphoreSlim gate)
     {
         try { await Task.WhenAll(tasks).ConfigureAwait(false); }
-        catch { /* individual task failures surface to the aggregator */ }
+        catch { /* individual failures surface through the awaited Task.WhenAll on the caller */ }
         finally { gate.Dispose(); }
-    }
-
-    /// <summary>Creates a worker message using the registered message factory.</summary>
-    private object CreateWorkerMessage(Type workerType, object splitValue, ParameterInfo[] parameters, object[] otherArgs)
-    {
-        var factory = _instanceMessageFactory ?? _globalMessageFactory;
-        if (factory is not null)
-            return factory(workerType, splitValue, parameters, otherArgs);
-
-        throw new InvalidOperationException($"No message factory registered for worker type '{workerType.Name}'. Register one using RegisterMessageFactory.");
-    }
-
-    /// <summary>Aggregates worker results using the registered result aggregator.</summary>
-    private TResult AggregateResults<TResult>(object[] results, Type workerType)
-    {
-        var aggregator = _instanceResultAggregator ?? _globalResultAggregator;
-        if (aggregator is not null)
-            return (TResult)aggregator(results, workerType, typeof(TResult));
-
-        throw new InvalidOperationException($"No result aggregator registered for worker type '{workerType.Name}'. Register one using RegisterResultAggregator.");
     }
 
     /// <summary>Synchronous disposal that delegates to <see cref="DisposeAsync"/>; provided so the
@@ -487,9 +461,7 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
     public async ValueTask DisposeAsync()
     {
         await StopCachedActorsAsync(_supervisorCache.Values).ConfigureAwait(false);
-        await StopCachedActorsAsync(_workerSupervisorCache.Values).ConfigureAwait(false);
         _supervisorCache.Clear();
-        _workerSupervisorCache.Clear();
         GC.SuppressFinalize(this);
     }
 

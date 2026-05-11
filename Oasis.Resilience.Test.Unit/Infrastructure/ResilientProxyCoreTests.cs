@@ -12,46 +12,6 @@ using Xunit;
 public class ResilientProxyCoreTests
 {
     /// <summary>
-    /// Verifies <see cref="ResilientProxy{T}.RegisterMessageFactory"/> stores the factory globally.
-    /// </summary>
-    [Fact]
-    public void RegisterMessageFactory_should_set_factory()
-    {
-        Func<Type, object, ParameterInfo[], object[], object> factory = (type, splitValue, parameters, otherArgs) =>
-        {
-            return new object();
-        };
-
-        ResilientProxy<ITestService>.RegisterMessageFactory(factory);
-
-        var field = typeof(ResilientProxy<ITestService>).GetField("_globalMessageFactory",
-            BindingFlags.NonPublic | BindingFlags.Static);
-        var storedFactory = field?.GetValue(null) as Func<Type, object, ParameterInfo[], object[], object>;
-
-        Assert.NotNull(storedFactory);
-    }
-
-    /// <summary>
-    /// Verifies <see cref="ResilientProxy{T}.RegisterResultAggregator"/> stores the aggregator globally.
-    /// </summary>
-    [Fact]
-    public void RegisterResultAggregator_should_set_aggregator()
-    {
-        Func<object[], Type, Type, object> aggregator = (results, workerType, returnType) =>
-        {
-            return new object();
-        };
-
-        ResilientProxy<ITestService>.RegisterResultAggregator(aggregator);
-
-        var field = typeof(ResilientProxy<ITestService>).GetField("_globalResultAggregator",
-            BindingFlags.NonPublic | BindingFlags.Static);
-        var storedAggregator = field?.GetValue(null) as Func<object[], Type, Type, object>;
-
-        Assert.NotNull(storedAggregator);
-    }
-
-    /// <summary>
     /// Verifies that <see cref="RetryAttribute"/> values are cached for method invocations.
     /// </summary>
     [Fact]
@@ -74,54 +34,6 @@ public class ResilientProxyCoreTests
         var cachedAttr = cache?.GetOrAdd(method!, m => m.GetCustomAttribute<RetryAttribute>());
         Assert.NotNull(cachedAttr);
         Assert.Equal(3, cachedAttr!.MaxAttempts);
-    }
-
-    /// <summary>
-    /// Verifies a registered message factory is invoked to create worker messages.
-    /// </summary>
-    [Fact]
-    public void RegisterMessageFactory_should_create_messages()
-    {
-        Func<Type, object, ParameterInfo[], object[], object> factory = (type, splitValue, parameters, otherArgs) =>
-        {
-            return new { Type = type.Name, Value = splitValue };
-        };
-
-        ResilientProxy<ITestService>.RegisterMessageFactory(factory);
-
-        var method = typeof(ResilientProxy<ITestService>).GetMethod("CreateWorkerMessage",
-            BindingFlags.NonPublic | BindingFlags.Instance);
-        var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ??
-            throw new InvalidOperationException("Failed to create proxy");
-
-        var result = method?.Invoke(resilientProxy, [typeof(string), "test", Array.Empty<ParameterInfo>(), Array.Empty<object>()]);
-
-        Assert.NotNull(result);
-    }
-
-    /// <summary>
-    /// Verifies a registered result aggregator is invoked to combine worker results.
-    /// </summary>
-    [Fact]
-    public void RegisterResultAggregator_should_aggregate_results()
-    {
-        Func<object[], Type, Type, object> aggregator = (results, workerType, returnType) =>
-        {
-            return results.Length;
-        };
-
-        ResilientProxy<ITestService>.RegisterResultAggregator(aggregator);
-
-        var method = typeof(ResilientProxy<ITestService>).GetMethod("AggregateResults",
-            BindingFlags.NonPublic | BindingFlags.Instance);
-        var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ??
-            throw new InvalidOperationException("Failed to create proxy");
-
-        var result = method?.MakeGenericMethod(typeof(int))?.Invoke(resilientProxy, [new object[] { 1, 2, 3 }, typeof(string)]);
-
-        Assert.Equal(3, result);
     }
 
     /// <summary>

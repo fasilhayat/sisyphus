@@ -1,104 +1,116 @@
 namespace Oasis.Resilience.Test.Unit.Proxies;
 
-using Akka.Actor;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Oasis.Resilience;
 using Oasis.Resilience.Attributes;
-using Oasis.Resilience.Proxies;
 using Xunit;
 
 /// <summary>
-/// End-to-end fan-out integration test that wires the <see cref="ResilientProxy{T}"/> with a
-/// real worker actor, verifies the message factory and result aggregator are invoked, and that
-/// per-worker-type supervisor caching does not leak actors across calls.
+/// End-to-end fan-out integration tests that wire the <see cref="Proxies.ResilientProxy{T}"/> through
+/// the DI stack and verify that the proxy correctly splits, invokes, and aggregates results without
+/// any Akka worker actors or manual message/aggregator registration.
 /// </summary>
 public class ResilientProxyFanOutIntegrationTests
 {
     /// <summary>
-    /// Worker message: process a single integer.
-    /// </summary>
-    /// <param name="Value">The integer to square.</param>
-    public sealed record SquareJob(int Value);
-
-    /// <summary>
-    /// Worker actor that squares the input value.
-    /// </summary>
-    public sealed class SquareWorker : ReceiveActor
-    {
-        /// <summary>Initializes a new instance of the <see cref="SquareWorker"/> class.</summary>
-        public SquareWorker() => Receive<SquareJob>(j => Sender.Tell(j.Value * j.Value));
-    }
-
-    /// <summary>
-    /// Service contract demonstrating fan-out across multiple worker actors.
+    /// Contract for a service that squares integers in parallel.
     /// </summary>
     public interface IMathService
     {
-        /// <summary>Squares each value in <paramref name="values"/> using fan-out workers.</summary>
+        /// <summary>Squares each value in <paramref name="values"/> using fan-out.</summary>
         Task<int[]> SquareAllAsync(int[] values);
     }
 
     /// <summary>
-    /// Service implementation that delegates to fan-out workers via the proxy.
+    /// Implementation — the body works correctly with a single-element array because the proxy
+    /// calls it once per item and merges the results.
     /// </summary>
     public sealed class MathService : IMathService
     {
-        /// <summary>Squares each value in <paramref name="values"/> using fan-out workers.</summary>
-        [FanOut(workerActorType: typeof(SquareWorker), splitParameterName: "values", maxWorkers: 4)]
-        public Task<int[]> SquareAllAsync(int[] values) => throw new NotImplementedException("intercepted by proxy");
+        /// <inheritdoc/>
+        [FanOut(maxWorkers: 4)]
+        public Task<int[]> SquareAllAsync(int[] values)
+            => Task.FromResult(values.Select(v => v * v).ToArray());
+    }
+
+    private static IMathService BuildService()
+    {
+        var services = new ServiceCollection();
+        services.AddResilience(retry => retry.LogLevel = LogLevel.None);
+        services.AddResilientService<IMathService, MathService>();
+        return services.BuildServiceProvider().GetRequiredService<IMathService>();
     }
 
     /// <summary>
-    /// Verifies that fan-out distributes work to multiple workers, the message factory and
-    /// aggregator run, and the aggregated result reaches the caller.
+    /// Verifies that fan-out distributes work and the results are aggregated correctly.
     /// </summary>
     [Fact]
     public async Task Proxy_should_fan_out_and_aggregate_results()
     {
-        ResilientProxy<IMathService>.RegisterMessageFactory((workerType, splitValue, parameters, otherArgs) =>
-            new SquareJob((int)splitValue));
+        var service = BuildService();
 
-        ResilientProxy<IMathService>.RegisterResultAggregator((results, workerType, returnType) =>
-            results.Select(r => (int)r).OrderBy(x => x).ToArray());
+        var result = await service.SquareAllAsync([2, 3, 4, 5]);
 
-        var services = new ServiceCollection();
-        services.AddResilience(retry => retry.LogLevel = LogLevel.None);
-        services.AddResilientService<IMathService, MathService>();
-
-        using var provider = services.BuildServiceProvider();
-        var service = provider.GetRequiredService<IMathService>();
-
-        var result = await service.SquareAllAsync(new[] { 2, 3, 4, 5 });
-
-        Assert.Equal(new[] { 4, 9, 16, 25 }, result);
+        Assert.Equal(4, result.Length);
+        Assert.Contains(4, result);
+        Assert.Contains(9, result);
+        Assert.Contains(16, result);
+        Assert.Contains(25, result);
     }
 
     /// <summary>
-    /// Verifies that fan-out processes ALL input values even when there are more items than
-    /// <c>maxWorkers</c> (the previous implementation silently truncated extras).
+    /// Verifies that all items are processed even when the input count exceeds <c>maxWorkers</c>.
+    /// This is a regression test for the previous implementation that silently truncated extras.
     /// </summary>
     [Fact]
     public async Task Proxy_should_process_all_items_when_input_exceeds_maxWorkers()
     {
-        ResilientProxy<IMathService>.RegisterMessageFactory((workerType, splitValue, parameters, otherArgs) =>
-            new SquareJob((int)splitValue));
-
-        ResilientProxy<IMathService>.RegisterResultAggregator((results, workerType, returnType) =>
-            results.Select(r => (int)r).OrderBy(x => x).ToArray());
-
-        var services = new ServiceCollection();
-        services.AddResilience(retry => retry.LogLevel = LogLevel.None);
-        services.AddResilientService<IMathService, MathService>();
-
-        using var provider = services.BuildServiceProvider();
-        var service = provider.GetRequiredService<IMathService>();
+        var service = BuildService();
 
         var input = Enumerable.Range(1, 12).ToArray();
-        var expected = input.Select(i => i * i).OrderBy(x => x).ToArray();
+        var expected = input.Select(i => i * i).ToHashSet();
 
         var result = await service.SquareAllAsync(input);
 
-        Assert.Equal(expected, result);
+        Assert.Equal(12, result.Length);
+        Assert.All(result, r => Assert.Contains(r, expected));
+    }
+
+    /// <summary>
+    /// Verifies that a fan-out over a Dictionary return type merges all partial results.
+    /// </summary>
+    public interface ILookupService
+    {
+        /// <summary>Looks up each key in parallel and returns a merged dictionary.</summary>
+        Task<Dictionary<int, string>> LookUpAsync(int[] keys);
+    }
+
+    /// <summary>Implementation that returns one entry per key.</summary>
+    public sealed class LookupService : ILookupService
+    {
+        /// <inheritdoc/>
+        [FanOut(maxWorkers: 3)]
+        public Task<Dictionary<int, string>> LookUpAsync(int[] keys)
+            => Task.FromResult(keys.ToDictionary(k => k, k => $"value-{k}"));
+    }
+
+    /// <summary>
+    /// Verifies that partial dictionaries are merged into one result.
+    /// </summary>
+    [Fact]
+    public async Task Proxy_should_merge_dictionary_results()
+    {
+        var services = new ServiceCollection();
+        services.AddResilience(retry => retry.LogLevel = LogLevel.None);
+        services.AddResilientService<ILookupService, LookupService>();
+        var service = services.BuildServiceProvider().GetRequiredService<ILookupService>();
+
+        var result = await service.LookUpAsync([10, 20, 30]);
+
+        Assert.Equal(3, result.Count);
+        Assert.Equal("value-10", result[10]);
+        Assert.Equal("value-20", result[20]);
+        Assert.Equal("value-30", result[30]);
     }
 }

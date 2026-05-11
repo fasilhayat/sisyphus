@@ -16,55 +16,36 @@ public class ResilientProxyFanOutTests
     public interface IFanOutService
     {
         /// <summary>
-        /// A fan-out method decorated with <see cref="FanOutAttribute"/>.
+        /// A fan-out method — auto-detects the single array parameter.
         /// </summary>
-        /// <param name="items">The items to split across workers.</param>
-        /// <returns>A task that yields a dictionary of item IDs to data strings.</returns>
-        [FanOut(workerActorType: typeof(TestWorkerActor), splitParameterName: "items")]
+        [FanOut(maxWorkers: 4)]
         Task<Dictionary<int, string>> GetDataFanOutAsync(int[] items);
-    }
 
-    /// <summary>
-    /// Test worker actor that processes <see cref="TestWorkerMessage"/> and replies with <see cref="TestWorkerResult"/>.
-    /// </summary>
-    public class TestWorkerActor : Akka.Actor.ReceiveActor
-    {
         /// <summary>
-        /// Initializes a new instance of the <see cref="TestWorkerActor"/> class.
+        /// A fan-out method with an explicit splitOn to disambiguate two array parameters.
         /// </summary>
-        public TestWorkerActor()
-        {
-            Receive<TestWorkerMessage>(msg =>
-            {
-                Sender.Tell(new TestWorkerResult(msg.ItemId, $"Data for {msg.ItemId}"), Self);
-            });
-        }
+        [FanOut(splitOn: "items", maxWorkers: 2)]
+        Task<Dictionary<int, string>> GetDataExplicitAsync(int[] items, string[] filters);
     }
-
-    /// <summary>
-    /// Represents a work item message for a worker actor.
-    /// </summary>
-    /// <param name="ItemId">The item identifier.</param>
-    public record TestWorkerMessage(int ItemId);
-
-    /// <summary>
-    /// Represents the result of a worker actor processing.
-    /// </summary>
-    /// <param name="ItemId">The item identifier.</param>
-    /// <param name="Data">The resulting data string.</param>
-    public record TestWorkerResult(int ItemId, string Data);
 
     /// <summary>
     /// Test implementation of <see cref="IFanOutService"/>.
     /// </summary>
     public class FanOutService : IFanOutService
     {
-        /// <summary>
-        /// Returns a dictionary mapping each item ID to its data string.
-        /// </summary>
-        /// <param name="items">The array of item IDs.</param>
-        /// <returns>A task that yields a dictionary of item data.</returns>
+        /// <inheritdoc/>
+        [FanOut(maxWorkers: 4)]
         public Task<Dictionary<int, string>> GetDataFanOutAsync(int[] items)
+        {
+            var result = new Dictionary<int, string>();
+            foreach (var item in items)
+                result[item] = $"Data for {item}";
+            return Task.FromResult(result);
+        }
+
+        /// <inheritdoc/>
+        [FanOut(splitOn: "items", maxWorkers: 2)]
+        public Task<Dictionary<int, string>> GetDataExplicitAsync(int[] items, string[] filters)
         {
             var result = new Dictionary<int, string>();
             foreach (var item in items)
@@ -74,25 +55,21 @@ public class ResilientProxyFanOutTests
     }
 
     /// <summary>
-    /// Verifies that <see cref="FanOutAttribute"/> is cached for fan-out service methods.
+    /// Verifies that <see cref="FanOutAttribute"/> with auto-detect is cached for fan-out service methods.
     /// </summary>
     [Fact]
     public void FanOut_should_cache_attribute()
     {
-        var proxy = DispatchProxy.Create<IFanOutService, ResilientProxy<IFanOutService>>();
-        var p = proxy as ResilientProxy<IFanOutService> ??
-            throw new InvalidOperationException("Failed to create proxy");
-
         var method = typeof(IFanOutService).GetMethod(nameof(IFanOutService.GetDataFanOutAsync));
         var attribute = method?.GetCustomAttribute<FanOutAttribute>();
 
         Assert.NotNull(attribute);
-        Assert.Equal(typeof(TestWorkerActor), attribute.WorkerActorType);
-        Assert.Equal("items", attribute.SplitParameterName);
+        Assert.Null(attribute!.SplitOn);
+        Assert.Equal(4, attribute.MaxWorkers);
     }
 
     /// <summary>
-    /// Verifies a fan-out proxy can be created via <see cref="DispatchProxy"/>.
+    /// Verifies that a fan-out proxy can be created via <see cref="DispatchProxy"/>.
     /// </summary>
     [Fact]
     public void FanOut_proxy_should_be_creatable()
@@ -105,48 +82,16 @@ public class ResilientProxyFanOutTests
     }
 
     /// <summary>
-    /// Verifies a message factory can be registered for fan-out operations.
+    /// Verifies that an explicit <c>splitOn</c> attribute is stored and readable via reflection.
     /// </summary>
     [Fact]
-    public void FanOut_should_allow_registering_message_factory()
+    public void FanOut_explicit_splitOn_should_be_stored()
     {
-        var proxy = DispatchProxy.Create<IFanOutService, ResilientProxy<IFanOutService>>();
-        var p = proxy as ResilientProxy<IFanOutService> ??
-            throw new InvalidOperationException("Failed to create proxy");
+        var method = typeof(IFanOutService).GetMethod(nameof(IFanOutService.GetDataExplicitAsync));
+        var attribute = method?.GetCustomAttribute<FanOutAttribute>();
 
-        ResilientProxy<IFanOutService>.RegisterMessageFactory(
-            (actorType, splitValue, parameters, otherArgs) =>
-            {
-                if (actorType == typeof(TestWorkerActor))
-                    return new TestWorkerMessage((int)splitValue);
-                return splitValue;
-            });
-
-        Assert.True(true);
-    }
-
-    /// <summary>
-    /// Verifies a result aggregator can be registered for fan-out operations.
-    /// </summary>
-    [Fact]
-    public void FanOut_should_allow_registering_result_aggregator()
-    {
-        var proxy = DispatchProxy.Create<IFanOutService, ResilientProxy<IFanOutService>>();
-        var p = proxy as ResilientProxy<IFanOutService> ??
-            throw new InvalidOperationException("Failed to create proxy");
-
-        ResilientProxy<IFanOutService>.RegisterResultAggregator(
-            (results, actorType, returnType) =>
-            {
-                var dict = new Dictionary<int, string>();
-                foreach (var result in results)
-                {
-                    if (result is TestWorkerResult workerResult)
-                        dict[workerResult.ItemId] = workerResult.Data;
-                }
-                return dict;
-            });
-
-        Assert.True(true);
+        Assert.NotNull(attribute);
+        Assert.Equal("items", attribute!.SplitOn);
+        Assert.Equal(2, attribute.MaxWorkers);
     }
 }

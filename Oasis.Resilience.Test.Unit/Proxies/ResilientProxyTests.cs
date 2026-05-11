@@ -145,35 +145,6 @@ public class ResilientProxyTests : ProxyTestBase
     }
 
     /// <summary>
-    /// Verifies that instance-level message factory and result aggregator registrations are supported.
-    /// </summary>
-    [Fact]
-    public void Proxy_should_support_instance_level_factory_registration()
-    {
-        var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
-        var resilientProxy = proxy as ResilientProxy<ITestService> ??
-            throw new InvalidOperationException("Failed to create proxy");
-
-        bool factoryCalled = false;
-        resilientProxy.SetMessageFactory((type, value, parameters, args) =>
-        {
-            factoryCalled = true;
-            return new object();
-        });
-
-        Assert.False(factoryCalled);
-
-        bool aggregatorCalled = false;
-        resilientProxy.SetResultAggregator((results, type, returnType) =>
-        {
-            aggregatorCalled = true;
-            return "result";
-        });
-
-        Assert.False(aggregatorCalled);
-    }
-
-    /// <summary>
     /// Test service interface for resilient proxy tests.
     /// </summary>
     public interface ITestService

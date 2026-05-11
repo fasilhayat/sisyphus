@@ -67,7 +67,7 @@ public class OptionsResolverTests
     [Fact]
     public void ResolveMaxWorkers_should_use_global_default_when_attribute_unset()
     {
-        var attribute = new FanOutAttribute(typeof(string), "param");
+        var attribute = new FanOutAttribute();
         var options = new FanOutOptions { DefaultMaxWorkers = 12 };
 
         var workers = Invoke<int>("ResolveMaxWorkers", attribute, options);
@@ -82,7 +82,7 @@ public class OptionsResolverTests
     [Fact]
     public void ResolveMaxWorkers_should_honor_explicit_value_of_five()
     {
-        var attribute = new FanOutAttribute(typeof(string), "param", maxWorkers: 5);
+        var attribute = new FanOutAttribute(maxWorkers: 5);
         var options = new FanOutOptions { DefaultMaxWorkers = 99 };
 
         var workers = Invoke<int>("ResolveMaxWorkers", attribute, options);

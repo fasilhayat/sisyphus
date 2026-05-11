@@ -124,38 +124,41 @@ public Task<string> RunBackgroundJobAsync() { ... }
 
 ### 🪂 Fan-Out — `[FanOut]`
 
-**What it does.** Splits a collection parameter into work items and dispatches each one to a pool of worker actors in parallel. Results are collected and aggregated back into a single return value via the registered message factory + result aggregator.
+**What it does.** Splits an array parameter and invokes the implementation once per item in parallel. Results are automatically merged back into a single return value — no worker actors, no message factories, no boilerplate.
 
 **When to use it.** When a single call processes a list and each item is independent — fetching holidays for many years, validating many records, calling a downstream API once per id. Fan-out turns a sequential O(n) call into a parallel one bounded by `maxWorkers`.
 
 ```mermaid
 flowchart LR
-    C([Caller: years=2022..2025]) --> P[Proxy / coordinator]
-    P -->|year 2022| W1[Worker 1]
-    P -->|year 2023| W2[Worker 2]
-    P -->|year 2024| W3[Worker 3]
-    P -->|year 2025| W4[Worker 4]
-    W1 --> AGG[Aggregator]
-    W2 --> AGG
-    W3 --> AGG
-    W4 --> AGG
+    C([Caller: years=2022..2025]) --> P[Proxy splits array]
+    P -->|years=2022| I1[Implementation ×1]
+    P -->|years=2023| I2[Implementation ×1]
+    P -->|years=2024| I3[Implementation ×1]
+    P -->|years=2025| I4[Implementation ×1]
+    I1 --> AGG[Auto-merge]
+    I2 --> AGG
+    I3 --> AGG
+    I4 --> AGG
     AGG --> R([Dictionary&lt;year, holidays&gt;])
 ```
 
 ```csharp
-[FanOut(workerActorType: typeof(HolidayWorkerActor), splitParameterName: "years", maxWorkers: 4)]
-public Task<Dictionary<int, string>> GetHolidaysForYearsAsync(int[] years, string country) { ... }
+// Auto-detects the single array parameter — no extra config needed
+[FanOut(maxWorkers: 4)]
+public Task<Dictionary<int, string>> GetHolidaysForYearsAsync(int[] years, string country)
+{
+    // This body is called once per item with years = [singleYear]
+    var result = new Dictionary<int, string>();
+    foreach (var year in years)
+    {
+        var response = await _client.GetAsync($"/{country}/{year}");
+        result[year] = await response.Content.ReadAsStringAsync();
+    }
+    return result;
+}
 ```
 
-You also register *how* to build a worker message and *how* to combine the results once at startup:
-
-```csharp
-ResilientProxy<IHolidayService>.RegisterMessageFactory((workerType, splitValue, parameters, otherArgs) =>
-    new HolidayWorkerActor.ProcessYear((int)splitValue, (string)otherArgs[0]));
-
-ResilientProxy<IHolidayService>.RegisterResultAggregator((results, workerType, returnType) =>
-    results.Cast<HolidayWorkerActor.YearProcessed>().ToDictionary(r => r.Year, r => r.Content));
-```
+The proxy calls this body with a single-element array for each item and merges the returned dictionaries automatically. **Supported return types for auto-merge**: `Dictionary<K,V>` (entries merged), `T[]` (elements concatenated), `List<T>` (elements concatenated).
 
 ### Stacking attributes
 
@@ -378,94 +381,57 @@ public class DataProcessor : IDataProcessor
 
 ### `[FanOut]`
 
-Splits a collection parameter and distributes work items across multiple worker actors for parallel processing.
+Splits an array parameter and invokes the implementation once per item in parallel. Results are merged automatically — no worker actors or manual aggregators required.
 
 ```csharp
 public class BatchProcessor : IBatchProcessor
 {
-    [FanOut(workerActorType: typeof(MyWorkerActor), splitParameterName: "items", maxWorkers: 5)]
-    public async Task<List<Result>> ProcessBatchAsync(int[] items, string category) { ... }
+    // Auto-detects the single array parameter
+    [FanOut(maxWorkers: 5)]
+    public async Task<List<Result>> ProcessBatchAsync(int[] items, string category)
+    {
+        // Called once per item; items will be a single-element array
+        var results = new List<Result>();
+        foreach (var item in items)
+            results.Add(await _service.ProcessAsync(item, category));
+        return results;
+    }
 }
+```
+
+When the method has more than one array parameter, specify which one to split:
+
+```csharp
+[FanOut(splitOn: "items", maxWorkers: 5)]
+public async Task<List<Result>> ProcessBatchAsync(int[] items, string[] categories) { ... }
 ```
 
 **Parameters**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `workerActorType` | `Type` | (required) | The Akka.NET actor type that processes each split work item |
-| `splitParameterName` | `string` | (required) | The parameter name (from the method signature) whose value is an enumerable to split across workers |
-| `maxWorkers` | `int` | `5` | Maximum number of worker actors to spawn |
+| `splitOn` | `string?` | `null` (auto-detect) | Name of the array parameter to split. Omit when the method has exactly one array parameter |
+| `maxWorkers` | `int` | global default | Maximum number of concurrent invocations |
 
-**Registration requirements**
+**Supported return types for auto-merge**
 
-Before using fan-out, you must register a **message factory** and a **result aggregator** for the service interface:
-
-```csharp
-// Create a worker message from a split value + non-split parameters
-ResilientProxy<IMyService>.RegisterMessageFactory(
-    (workerType, splitValue, parameters, otherArgs) =>
-    {
-        if (workerType == typeof(MyWorkerActor))
-        {
-            var item = (int)splitValue;
-            var category = (string)otherArgs[0];
-            return new MyWorkerActor.ProcessItem(item, category);
-        }
-        throw new InvalidOperationException($"Unknown worker: {workerType.Name}");
-    });
-
-// Aggregate worker results back into the method's return type
-ResilientProxy<IMyService>.RegisterResultAggregator(
-    (results, workerType, returnType) =>
-    {
-        if (returnType == typeof(List<Result>) && workerType == typeof(MyWorkerActor))
-        {
-            return results.Cast<MyWorkerActor.ItemProcessed>()
-                .Select(r => new Result(r.Id, r.Data))
-                .ToList();
-        }
-        throw new InvalidOperationException($"Unknown return type: {returnType.Name}");
-    });
-```
-
-**Message factory signature**
-
-```csharp
-Func<Type workerType, object splitValue, ParameterInfo[] parameters, object[] otherArgs, object>
-```
-
-| Parameter | Description |
-|-----------|-------------|
-| `workerType` | The actor type specified in `workerActorType` |
-| `splitValue` | A single element from the split collection (e.g., one `int` from an `int[]`) |
-| `parameters` | The method's `ParameterInfo[]` for reflection-based mapping |
-| `otherArgs` | All method arguments except the split parameter, in declaration order |
-
-**Result aggregator signature**
-
-```csharp
-Func<object[] results, Type workerType, Type returnType, object>
-```
-
-| Parameter | Description |
-|-----------|-------------|
-| `results` | Array of response objects collected from all workers |
-| `workerType` | The actor type used for processing |
-| `returnType` | The return type of the decorated method |
-| Returns | The aggregated result matching the method's return type |
+| Return type | Merge behaviour |
+|-------------|-----------------|
+| `Dictionary<K,V>` | All entries merged into one dictionary |
+| `T[]` | All elements concatenated into a single array |
+| `List<T>` | All elements concatenated into a single list |
 
 **Behavior**
 
-1. The split parameter (identified by `splitParameterName`) is iterated.
-2. Up to `maxWorkers` actors are spawned, each receiving one element via the message factory.
-3. Workers process in parallel. Each worker's result is collected.
-4. When all workers complete, the result aggregator combines individual results into the method's return type.
-5. Fan-out can be combined with `[Supervision]` so that individual worker failures trigger the configured supervision strategy.
+1. The array parameter (auto-detected or named via `splitOn`) is iterated.
+2. The implementation is called once per item with a single-element array; `maxWorkers` caps parallel concurrency.
+3. All items are always processed regardless of array length relative to `maxWorkers`.
+4. Results are automatically merged based on the method's return type.
 
 ```csharp
 public class HolidayService : IHolidayService
 {
-    [FanOut(workerActorType: typeof(HolidayWorkerActor), splitParameterName: "years", maxWorkers: 5)]
+    [FanOut(maxWorkers: 5)]
     [Supervision(strategy: SupervisionStrategy.RestartWithBackoff)]
     public async Task<Dictionary<int, string>> GetHolidaysForYearsAsync(int[] years, string country) { ... }
 }
