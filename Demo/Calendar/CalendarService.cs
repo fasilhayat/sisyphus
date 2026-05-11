@@ -1,59 +1,41 @@
-﻿using Demo.Calendar;
+namespace Demo.Calendar;
+
 using Oasis.Resilience.Attributes;
 
 /// <summary>
-/// Provides methods for interacting with calendar-related backend services.
+/// Demonstrates parallel <see cref="RetryAttribute"/> chains: both DK and NO calendar calls run
+/// concurrently via <c>Task.WhenAll</c>, each maintaining an independent retry state.
 /// </summary>
 public class CalendarService : ICalendarService
 {
-    /// <summary>
-    /// Provides a static instance of HttpClient configured with a base address of http://localhost:8080.
-    /// </summary>
     private static readonly HttpClient Client = new()
     {
-        BaseAddress = new Uri("http://localhost:8080")
+        BaseAddress = new Uri("http://localhost:5080")
     };
 
-    /// <summary>
-    /// Asynchronously retrieves Danish public holidays for the year 2001 from the calendar backend.
-    /// </summary>
-    [Retry(maxAttempts: 2, initialDelay: 2500)]
+    /// <summary>Retrieves Danish public holidays. Retries up to 2 times with 500ms initial backoff.</summary>
+    [Retry(maxAttempts: 2, initialDelay: 500)]
     public async Task<string> GetDanishHolidaysAsync()
     {
-        Console.WriteLine("Calling DanishHolidays backend...");
-        return await GetHolidaysAsync("/v1/calendar/holidays/DK/2001");
-    }
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine("  [DK] Calling calendar backend...");
+        Console.ResetColor();
 
-    /// <summary>
-    /// Asynchronously retrieves Norwegian public holidays for the year 2023 from the calendar backend.
-    /// </summary>
-    [Retry(maxAttempts: 8, initialDelay: 3500)]
-    public async Task<string> GetNorwegianHolidaysAsync()
-    {
-        Console.WriteLine("Calling Norwegian backend...");
-        return await GetHolidaysAsync("/v1/calendar/holidays/NO/2023");
-    }
-
-    /// <summary>
-    /// Shared HTTP execution logic for holiday endpoints.
-    /// </summary>
-    private async Task<string> GetHolidaysAsync(string path)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Get, path);
-        AddDefaultHeaders(request);
-
-        var response = await Client.SendAsync(request);
+        var response = await Client.GetAsync("/calendar/dk");
         response.EnsureSuccessStatusCode();
-
         return await response.Content.ReadAsStringAsync();
     }
 
-    /// <summary>
-    /// Centralized request headers for calendar API calls.
-    /// </summary>
-    private void AddDefaultHeaders(HttpRequestMessage request)
+    /// <summary>Retrieves Norwegian public holidays. Retries up to 3 times with 500ms initial backoff.</summary>
+    [Retry(maxAttempts: 3, initialDelay: 500)]
+    public async Task<string> GetNorwegianHolidaysAsync()
     {
-        request.Headers.Add("accept", "*/*");
-        request.Headers.Add("X-API-KEY", "Skyw@lker!");
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine("  [NO] Calling calendar backend...");
+        Console.ResetColor();
+
+        var response = await Client.GetAsync("/calendar/no");
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync();
     }
 }

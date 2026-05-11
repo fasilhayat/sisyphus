@@ -3,76 +3,51 @@ namespace Demo.Inventory;
 using Oasis.Resilience.Attributes;
 
 /// <summary>
-/// Service responsible for managing inventory operations including retrieval, updates, and stock alerts.
-/// Communicates with the external inventory service at https://inventory.hayatnet.local.
+/// Demonstrates the <see cref="CircuitBreakerAttribute"/> combined with <see cref="RetryAttribute"/>.
+/// Retry handles transient blips; the circuit breaker opens after 3 exhausted retry sequences and
+/// rejects all further calls until the 5-second reset timeout elapses (transitioning to half-open).
 /// </summary>
 public class InventoryService : IInventoryService
 {
     private static readonly HttpClient Client = new()
     {
-        BaseAddress = new Uri("https://inventory.hayatnet.local")
+        BaseAddress = new Uri("http://localhost:5080")
     };
 
     /// <summary>
-    /// Retrieves the full inventory list from the inventory service.
-    /// Protected by circuit breaker (3 failures) and retry (4 attempts, 1s delay).
+    /// Retrieves the full inventory list.
+    /// Circuit opens after 3 failures; resets after 5 seconds.
     /// </summary>
-    /// <returns>A string containing the inventory data.</returns>
-    [CircuitBreaker(failureThreshold: 3, resetTimeout: 10000, maxConcurrentCalls: 2)]
-    [Retry(maxAttempts: 4, initialDelay: 1000)]
+    [CircuitBreaker(failureThreshold: 3, resetTimeout: 5000, maxConcurrentCalls: 1)]
+    [Retry(maxAttempts: 2, initialDelay: 300)]
     public async Task<string> GetInventoryAsync()
     {
-        Console.WriteLine("Calling inventory endpoint...");
-        var req = new HttpRequestMessage(HttpMethod.Get, "/v1/inventory");
-        req.Headers.Add("accept", "*/*");
-        req.Headers.Add("X-API-KEY", "Skyw@lker!");
-
-        var response = await Client.SendAsync(req);
+        var response = await Client.GetAsync("/inventory");
         response.EnsureSuccessStatusCode();
-
         return await response.Content.ReadAsStringAsync();
     }
 
-    /// <summary>
-    /// Updates the quantity of a specific inventory item.
-    /// Protected by circuit breaker (2 failures) and retry (3 attempts, 2s delay).
-    /// </summary>
-    /// <param name="itemId">The unique identifier of the inventory item to update.</param>
-    /// <param name="quantity">The new quantity to set for the item.</param>
-    /// <returns>A string confirming the inventory update.</returns>
-    [CircuitBreaker(failureThreshold: 2, resetTimeout: 15000, maxConcurrentCalls: 1)]
-    [Retry(maxAttempts: 3, initialDelay: 2000)]
+    /// <summary>Updates a specific inventory item.</summary>
+    [CircuitBreaker(failureThreshold: 2, resetTimeout: 5000, maxConcurrentCalls: 1)]
+    [Retry(maxAttempts: 2, initialDelay: 300)]
     public async Task<string> UpdateInventoryAsync(string itemId, int quantity)
     {
-        Console.WriteLine($"Updating inventory: {itemId} with quantity {quantity}");
-        var req = new HttpRequestMessage(HttpMethod.Post, $"/v1/inventory/{itemId}");
-        req.Content = new StringContent($"{{\"quantity\": {quantity}}}");
-        req.Headers.Add("accept", "*/*");
-        req.Headers.Add("X-API-KEY", "Skyw@lker!");
-
-        var response = await Client.SendAsync(req);
+        var content = new StringContent(
+            $"{{\"quantity\":{quantity}}}",
+            System.Text.Encoding.UTF8,
+            "application/json");
+        var response = await Client.PostAsync($"/inventory/{itemId}", content);
         response.EnsureSuccessStatusCode();
-
         return await response.Content.ReadAsStringAsync();
     }
 
-    /// <summary>
-    /// Fetches stock alerts for items that are low or out of stock.
-    /// Protected by circuit breaker (5 failures) and retry (2 attempts, 500ms delay).
-    /// </summary>
-    /// <returns>A string containing the stock alert data.</returns>
-    [CircuitBreaker(failureThreshold: 5, resetTimeout: 20000, maxConcurrentCalls: 1)]
-    [Retry(maxAttempts: 2, initialDelay: 500)]
+    /// <summary>Fetches stock alerts for low-stock items.</summary>
+    [CircuitBreaker(failureThreshold: 5, resetTimeout: 5000, maxConcurrentCalls: 1)]
+    [Retry(maxAttempts: 2, initialDelay: 300)]
     public async Task<string> GetStockAlertsAsync()
     {
-        Console.WriteLine("Fetching stock alerts...");
-        var req = new HttpRequestMessage(HttpMethod.Get, "/v1/inventory/alerts");
-        req.Headers.Add("accept", "*/*");
-        req.Headers.Add("X-API-KEY", "Skyw@lker!");
-
-        var response = await Client.SendAsync(req);
+        var response = await Client.GetAsync("/inventory/alerts");
         response.EnsureSuccessStatusCode();
-
         return await response.Content.ReadAsStringAsync();
     }
 }

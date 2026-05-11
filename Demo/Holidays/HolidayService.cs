@@ -3,58 +3,53 @@ namespace Demo.Holidays;
 using Oasis.Resilience.Attributes;
 
 /// <summary>
-/// Implementation of the holiday service that retrieves holiday data from an external API.
+/// Demonstrates <see cref="FanOutAttribute"/>: <see cref="GetHolidaysForYearsAsync"/> receives an
+/// array of years, which the proxy splits and dispatches as parallel per-item invocations
+/// (one per year), then merges the partial <c>Dictionary&lt;int,string&gt;</c> results automatically.
 /// </summary>
 public class HolidayService : IHolidayService
 {
     private static readonly HttpClient Client = new()
     {
-        BaseAddress = new Uri("https://holidays.api")
+        BaseAddress = new Uri("http://localhost:5080")
     };
 
-    /// <summary>
-    /// Retrieves Norwegian holidays for the specified year.
-    /// </summary>
-    /// <param name="year">The year to retrieve holidays for.</param>
-    /// <returns>A task containing the holiday data as a string.</returns>
-    [Retry(maxAttempts: 3, initialDelay: 2000)]
+    /// <summary>Retrieves Norwegian holidays for a single year with retry and supervision.</summary>
+    [Retry(maxAttempts: 3, initialDelay: 500)]
     [Supervision(strategy: SupervisionStrategy.RestartWithBackoff)]
     public async Task<string> GetNorwegianHolidaysAsync(int year)
     {
-        var response = await Client.GetAsync($"/norway/{year}");
+        var response = await Client.GetAsync($"/holidays/norway/{year}");
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
 
-    /// <summary>
-    /// Retrieves Danish holidays for the specified year.
-    /// </summary>
-    /// <param name="year">The year to retrieve holidays for.</param>
-    /// <returns>A task containing the holiday data as a string.</returns>
-    [Retry(maxAttempts: 3, initialDelay: 2000)]
+    /// <summary>Retrieves Danish holidays for a single year with retry and supervision.</summary>
+    [Retry(maxAttempts: 3, initialDelay: 500)]
     [Supervision(strategy: SupervisionStrategy.RestartWithBackoff)]
     public async Task<string> GetDanishHolidaysAsync(int year)
     {
-        var response = await Client.GetAsync($"/denmark/{year}");
+        var response = await Client.GetAsync($"/holidays/denmark/{year}");
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
 
     /// <summary>
-    /// Retrieves holidays for multiple years in parallel. The proxy fan-out intercepts this call,
-    /// invokes the method body once per year, and merges all partial results into a single dictionary.
+    /// Fetches holidays for multiple years in parallel. The proxy intercepts this call, splits
+    /// the <paramref name="years"/> array, and invokes this body once per year with a single-element
+    /// array. All partial dictionaries are merged automatically into the returned result.
     /// </summary>
-    /// <param name="years">The years to retrieve holidays for.</param>
-    /// <param name="country">The country code.</param>
-    /// <returns>A task containing a dictionary mapping each year to its holiday data.</returns>
-    [FanOut(maxWorkers: 5)]
-    [Supervision(strategy: SupervisionStrategy.RestartWithBackoff)]
+    [FanOut(maxWorkers: 4)]
     public async Task<Dictionary<int, string>> GetHolidaysForYearsAsync(int[] years, string country)
     {
         var result = new Dictionary<int, string>();
         foreach (var year in years)
         {
-            var response = await Client.GetAsync($"/{country}/{year}");
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine($"  [Worker] Fetching {country}/{year}...");
+            Console.ResetColor();
+
+            var response = await Client.GetAsync($"/holidays/{country}/{year}");
             response.EnsureSuccessStatusCode();
             result[year] = await response.Content.ReadAsStringAsync();
         }
