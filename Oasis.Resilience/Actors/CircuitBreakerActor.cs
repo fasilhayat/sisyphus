@@ -178,9 +178,10 @@ public sealed class CircuitBreakerActor : ReceiveActor
         }
         catch (Exception ex)
         {
+            // Pass the original exception through — do not re-wrap so callers retain token/stack identity.
             if (ex is OperationCanceledException)
             {
-                originalSender.Tell(new Status.Failure(new OperationCanceledException()));
+                originalSender.Tell(new Status.Failure(ex));
             }
             else
             {
@@ -205,7 +206,8 @@ public sealed class CircuitBreakerActor : ReceiveActor
         }
         else if (msg.Exception is OperationCanceledException)
         {
-            msg.OriginalSender.Tell(new Status.Failure(new OperationCanceledException()));
+            // Pass the original exception through — do not re-wrap so callers retain token/stack identity.
+            msg.OriginalSender.Tell(new Status.Failure(msg.Exception));
         }
         else
         {

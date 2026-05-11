@@ -79,10 +79,11 @@ internal sealed class ResilienceRuntime : IDisposable, IAsyncDisposable
         await System.Terminate();
     }
 
-    /// <summary>Disposes the actor system resources synchronously.</summary>
+    /// <summary>Disposes the actor system resources synchronously.
+    /// Uses a 5-second timeout to prevent hanging indefinitely if the actor system is unresponsive.</summary>
     public void Dispose()
     {
-        System.Terminate().GetAwaiter().GetResult();
+        System.Terminate().WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
     }
 
     /// <summary>Disposes the actor system resources asynchronously.</summary>
