@@ -2,6 +2,20 @@
 
 ---
 
+## 📈 Quality Evolution
+
+| Dimension | Baseline | Fix Cycle 1 | Optimisation | v2.4 · 2026-05-11 |
+|---|:---:|:---:|:---:|:---:|
+| Package design & correctness | 7.8 | 9.1 | 9.4 | **9.7** |
+| AOP utilisation | 7.5 | 8.7 | 8.9 | **9.0** |
+| Test coverage & stability | 7.0 | 8.6 | 8.7 | **8.8** |
+| Execution overhead | 7.5 | 8.5 | 8.8 | **9.3** |
+| Developer experience | 7.8 | 9.0 | 9.2 | **9.4** |
+| Cyclomatic complexity | 9.0 | 10.0 | 10.0 | **10.0** |
+| 🏆 **Overall** | 7.8 | 9.15 | 9.23 | 🟢 **9.45** |
+
+---
+
 ## v2.4 · 2026-05-11 — External AI Review & Final Hardening
 
 *130 tests · 90.3% line / 76.9% branch coverage · net8.0 library / net9.0 tests*
@@ -133,7 +147,7 @@ Previously added:
 ### 📊 Updated Quality Scorecard
 
 | Dimension | Round 1 | Round 2 | Δ |
-|---|---|---|---|---|
+|---|---|---|---|
 | Test coverage & stability | 8.6 / 10 | **8.7 / 10** | +0.1 |
 | Cyclomatic complexity | 10 / 10 | **10 / 10** | — |
 | Package design & correctness | 9.4 / 10 | **9.5 / 10** | +0.1 |
