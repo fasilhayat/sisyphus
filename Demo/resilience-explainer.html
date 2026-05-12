@@ -185,14 +185,44 @@
     filter: drop-shadow(0 0 4px currentColor);
   }
 
-  /* ── Description bar ──────────────────────────────────────────── */
-  .description-bar {
-    background: #161b22;
-    border-top: 1px solid #21262d;
-    padding: 12px 24px;
-    font-size: 0.86rem;
+  /* ── In-diagram step overlay ──────────────────────────────────── */
+  #overlay-text {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 0.82rem;
     color: #e6edf3;
-    min-height: 52px;
+    background: rgba(13, 17, 23, 0.82);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border-top: 1px solid rgba(88, 166, 255, 0.25);
+    padding: 9px 18px;
+    line-height: 1.5;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 100%;
+    box-sizing: border-box;
+    transition: opacity .3s;
+  }
+  .overlay-badge {
+    background: rgba(88, 166, 255, 0.15);
+    border: 1px solid rgba(88, 166, 255, 0.35);
+    color: #79c0ff;
+    border-radius: 10px;
+    padding: 1px 9px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+
+  .description-bar {
+    background: #0d1117;
+    border-top: 1px solid #21262d;
+    padding: 6px 24px;
+    font-size: 0.76rem;
+    color: #8b949e;
+    min-height: 32px;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -267,9 +297,13 @@
     position: absolute;
     font-size: 0.72rem;
     font-weight: 700;
-    padding: 2px 8px;
+    padding: 2px 10px;
     border-radius: 4px;
     pointer-events: none;
+    white-space: nowrap;
+    text-align: center;
+    width: 100%;
+    box-sizing: border-box;
   }
   .cb-closed   { background: #1a4429; color: #3fb950; border: 1px solid #238636; }
   .cb-open     { background: #4a1515; color: #f85149; border: 1px solid #6e1a1a; }
@@ -452,7 +486,7 @@ const CB = {
   nodes: [
     { id:'caller',  x:80,  y:190, label:'Caller',       sub:'Your code' },
     { id:'proxy',   x:240, y:190, label:'DispatchProxy', sub:'[CB]+[Retry]' },
-    { id:'cbactor', x:440, y:190, label:'CB Actor',      sub:'Akka.NET' },
+    { id:'cbactor', x:440, y:190, label:'Circuit Breaker', sub:'Akka.NET' },
     { id:'http',    x:630, y:190, label:'HTTP Service',  sub:'upstream' },
   ],
   edges: [
@@ -635,10 +669,10 @@ const FO = {
   nodes: [
     { id:'caller',  x:60,  y:190, label:'Caller',        sub:'Your code' },
     { id:'proxy',   x:200, y:190, label:'DispatchProxy', sub:'[FanOut]' },
-    { id:'w1',      x:390, y: 80, label:'Worker 1',      sub:'2022' },
-    { id:'w2',      x:390, y:153, label:'Worker 2',      sub:'2023' },
-    { id:'w3',      x:390, y:226, label:'Worker 3',      sub:'2024' },
-    { id:'w4',      x:390, y:299, label:'Worker 4',      sub:'2025' },
+    { id:'w1',      x:390, y: 75, label:'Worker 1',      sub:'2022' },
+    { id:'w2',      x:390, y:140, label:'Worker 2',      sub:'2023' },
+    { id:'w3',      x:390, y:205, label:'Worker 3',      sub:'2024' },
+    { id:'w4',      x:390, y:270, label:'Worker 4',      sub:'2025' },
     { id:'http',    x:570, y:190, label:'HTTP Service',  sub:'× 4 concurrent' },
     { id:'merge',   x:700, y:190, label:'Merge',         sub:'Task.WhenAll' },
   ],
@@ -828,7 +862,7 @@ function buildSVG(tab) {
 
   /* cb badge placeholder */
   if (tab.cbBadge) {
-    const fo = mkEl('foreignObject', { id:'cb-badge-fo', x:'370', y:'60', width:'130', height:'30' });
+    const fo = mkEl('foreignObject', { id:'cb-badge-fo', x:'385', y:'132', width:'110', height:'26' });
     const div = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
     div.id = 'cb-badge';
     div.className = 'cb-badge cb-closed';
@@ -839,6 +873,13 @@ function buildSVG(tab) {
 
   /* packet layer */
   svg.appendChild(mkEl('g', { id:'packets' }));
+
+  /* ── In-diagram text overlay ── */
+  const fo = mkEl('foreignObject', { id:'overlay-fo', x:'0', y:'308', width:'760', height:'72' });
+  const overlayDiv = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
+  overlayDiv.id = 'overlay-text';
+  fo.appendChild(overlayDiv);
+  svg.appendChild(fo);
 }
 
 /* ── apply step ── */
@@ -880,6 +921,11 @@ function applyStep(tab, stepIdx) {
   /* description */
   descText.innerHTML = step.desc;
   stepBadge.textContent = `Step ${stepIdx+1} / ${tab.steps.length}`;
+  /* mirror into in-diagram overlay */
+  const overlay = document.getElementById('overlay-text');
+  if (overlay) {
+    overlay.innerHTML = `<span class="overlay-badge">Step ${stepIdx+1}&thinsp;/&thinsp;${tab.steps.length}</span>${step.desc}`;
+  }
 
   /* dots */
   document.querySelectorAll('.step-dot').forEach((dot, i) => {
@@ -1019,6 +1065,18 @@ btnRestart.addEventListener('click', () => {
   stopPlay();
   currentStep = 0;
   applyStep(TABS[activeTab], 0);
+  // Start playing from the beginning automatically
+  const tab = TABS[activeTab];
+  btnPlay.textContent = '⏸ Pause';
+  btnPlay.classList.add('primary');
+  playTimer = setInterval(() => {
+    if (currentStep < tab.steps.length - 1) {
+      currentStep++;
+      applyStep(tab, currentStep);
+    } else {
+      stopPlay();
+    }
+  }, 2800);
 });
 
 document.getElementById('tabBar').addEventListener('click', e => {
