@@ -19,25 +19,31 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
     /// <param name="MaxAttempts">Maximum number of attempts before giving up.</param>
     /// <param name="InitialDelay">Initial delay before the first retry (doubles each attempt).</param>
     /// <param name="RetryOn">Optional exception types to retry on; <c>null</c> retries every exception.</param>
-    public sealed record Execute(
-        Func<Task<object>> Operation,
-        int MaxAttempts,
-        TimeSpan InitialDelay,
-        Type[]? RetryOn = null);
-
-    private sealed record ScheduleRetry(
-        Func<Task<object>> Operation,
-        int MaxAttempts,
-        TimeSpan InitialDelay,
-        int Attempt,
-        IActorRef OriginalSender,
-        Type[]? RetryOn);
+    public sealed record Execute(Func<Task<object>> Operation, int MaxAttempts, TimeSpan InitialDelay, Type[]? RetryOn = null);
+    
+    /// <summary>
+    /// Represents the state and configuration for a scheduled retry operation, including the operation to execute,
+    /// retry limits, delay strategy, and exception types to retry on.
+    /// </summary>
+    /// <param name="Operation">A delegate representing the asynchronous operation to be executed and potentially retried.</param>
+    /// <param name="MaxAttempts">The maximum number of retry attempts allowed for the operation. Must be greater than zero.</param>
+    /// <param name="InitialDelay">The initial delay to wait before the first retry attempt. Subsequent retries may use this value to calculate
+    /// backoff.</param>
+    /// <param name="Attempt">The current attempt number, starting from zero for the initial execution.</param>
+    /// <param name="OriginalSender">The actor reference representing the original sender of the request. Used to reply with the operation result or
+    /// failure.</param>
+    /// <param name="RetryOn">An optional array of exception types that should trigger a retry if thrown by the operation. If null or empty,
+    /// all exceptions may be retried.</param>
+    private sealed record ScheduleRetry(Func<Task<object>> Operation, int MaxAttempts, TimeSpan InitialDelay, int Attempt, IActorRef OriginalSender, Type[]? RetryOn);
 
     /// <summary>
     /// Gets or sets the timer scheduler used for scheduling delayed retries.
     /// </summary>
     public ITimerScheduler? Timers { get; set; }
 
+    /// <summary>
+    /// Timer counter used to generate unique keys for scheduled retries, ensuring that multiple concurrent retry operations do not interfere with each other's timers.
+    /// </summary>
     private int _timerCounter;
 
     /// <summary>
@@ -53,26 +59,42 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
         ReceiveAsync<ScheduleRetry>(HandleScheduleRetry);
     }
 
-    /// <summary>Handles an execute request by starting the first attempt.</summary>
+    /// <summary>
+    /// Processes the specified execute message by initiating the associated operation with retry logic.
+    /// </summary>
+    /// <param name="msg">The execute message containing the operation to perform, maximum retry attempts, initial delay, and retry
+    /// condition.</param>
+    /// <returns>A task that represents the asynchronous execution operation.</returns>
     private async Task HandleExecute(Execute msg)
     {
         await ExecuteAttemptInternal(msg.Operation, msg.MaxAttempts, msg.InitialDelay, attempt: 1, Sender, msg.RetryOn);
     }
 
-    /// <summary>Handles a scheduled retry by executing the next attempt asynchronously.</summary>
+    /// <summary>
+    /// Handles a schedule retry message by initiating a retry attempt for the specified operation.
+    /// </summary>
+    /// <param name="msg">The schedule retry message containing details about the operation to retry, including the operation delegate,
+    /// maximum attempts, initial delay, current attempt number, original sender, and retry conditions. Cannot be null.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
     private async Task HandleScheduleRetry(ScheduleRetry msg)
     {
         await ExecuteAttemptInternal(msg.Operation, msg.MaxAttempts, msg.InitialDelay, msg.Attempt, msg.OriginalSender, msg.RetryOn);
     }
 
-    /// <summary>Executes a single attempt and schedules a retry on failure if attempts remain and the exception is retryable.</summary>
-    private async Task ExecuteAttemptInternal(
-        Func<Task<object>> operation,
-        int maxAttempts,
-        TimeSpan initialDelay,
-        int attempt,
-        IActorRef originalSender,
-        Type[]? retryOn)
+    /// <summary>
+    /// Attempts to execute the specified asynchronous operation, handling retries and communicating the result or
+    /// failure to the original sender.
+    /// </summary>
+    /// <param name="operation">A delegate representing the asynchronous operation to execute. The delegate should return a task that produces
+    /// the operation result.</param>
+    /// <param name="maxAttempts">The maximum number of attempts to execute the operation before giving up. Must be greater than zero.</param>
+    /// <param name="initialDelay">The initial delay to wait before retrying the operation after a failure. Used to control the retry interval.</param>
+    /// <param name="attempt">The current attempt number, starting from 1. Used to track the number of execution attempts.</param>
+    /// <param name="originalSender">The actor reference to which the result or failure notification will be sent.</param>
+    /// <param name="retryOn">An optional array of exception types that should trigger a retry if thrown by the operation. If null, all
+    /// exceptions are considered for retry.</param>
+    /// <returns>A task that represents the asynchronous execution of the operation attempt and any subsequent retries.</returns>
+    private async Task ExecuteAttemptInternal(Func<Task<object>> operation, int maxAttempts, TimeSpan initialDelay, int attempt, IActorRef originalSender, Type[]? retryOn)
     {
         try
         {

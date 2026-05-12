@@ -38,7 +38,8 @@ var pipeline  = provider.GetRequiredService<IDataPipelineService>();
 
 // ══════════════════════════════════════════════════════════════════════════════
 Banner("OASIS RESILIENCE — LIVE DEMO");
-Dim("  Mock backend running on http://localhost:5080");
+Dim("  Mock backend   : http://localhost:5080  (bonds, inventory, pipeline)");
+Dim("  Calendara API  : http://localhost:8080  (calendar holidays, fan-out)");
 Console.WriteLine();
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -70,15 +71,15 @@ await PauseAsync();
 Chapter(2, "PARALLEL RETRY", "Task.WhenAll — independent retry chains per call");
 // ══════════════════════════════════════════════════════════════════════════════
 
-Info("Scenario : DK and NO calendar calls run concurrently via Task.WhenAll.");
-Info("DK       : [Retry(maxAttempts: 2)] — FLAKY (1 failure before OK).");
-Info("NO       : [Retry(maxAttempts: 3)] — FLAKY (2 failures before OK).");
-Info("Expected : Both complete independently. NO retries more but never blocks DK.");
+Info("Scenario : DK and NO holiday lookups run concurrently via Task.WhenAll,");
+Info("           each calling the live Calendara backend (localhost:8080).");
+Info("DK       : [Retry(maxAttempts: 2)] — resilient against transient failures.");
+Info("NO       : [Retry(maxAttempts: 3)] — resilient against transient failures.");
+Info("Expected : Both complete independently on first attempt. Each retry chain");
+Info("           is isolated — a slow/failing NO call never delays DK.");
 Console.WriteLine();
 
-mock.SetMode("calendar.dk", MockMode.Flaky, flakeAfter: 1);
-mock.SetMode("calendar.no", MockMode.Flaky, flakeAfter: 2);
-MockLine("calendar.dk → FLAKY (1 failure)  |  calendar.no → FLAKY (2 failures)");
+Live("Calendara backend → http://localhost:8080  (X-API-KEY authenticated)");
 Console.WriteLine();
 
 var dkTask = calendar.GetDanishHolidaysAsync();
@@ -87,8 +88,8 @@ var noTask = calendar.GetNorwegianHolidaysAsync();
 try { await Task.WhenAll(dkTask, noTask); }
 catch { /* inspect each task individually below */ }
 
-PrintResult("DK", dkTask);
-PrintResult("NO", noTask);
+PrintCalendarResult("DK", dkTask);
+PrintCalendarResult("NO", noTask);
 
 await PauseAsync();
 
@@ -198,26 +199,26 @@ await PauseAsync();
 Chapter(5, "FAN-OUT", "[FanOut(maxWorkers: 4)]");
 // ══════════════════════════════════════════════════════════════════════════════
 
-Info("Scenario : Fetch holidays for 4 years. The proxy intercepts the call, splits");
-Info("           the int[] parameter, and dispatches one parallel worker per year");
-Info("           (bounded by maxWorkers: 4). Partial dictionaries are auto-merged.");
-Info("Expected : 4 concurrent HTTP calls → 4 partial results → 1 merged Dictionary.");
+Info("Scenario : Fetch DK public holidays for 4 years. The proxy intercepts the call,");
+Info("           splits the int[] parameter, and dispatches one parallel worker per year");
+Info("           (bounded by maxWorkers: 4) against the live Calendara backend.");
+Info("           Partial dictionaries are auto-merged into one result.");
+Info("Expected : 4 concurrent HTTP calls to Calendara → 4 partial results → 1 merged Dictionary.");
 Console.WriteLine();
 
-mock.SetMode("holidays", MockMode.Ok);
-MockLine("holidays → OK");
+Live("Calendara backend → http://localhost:8080  (X-API-KEY authenticated)");
 Console.WriteLine();
 
 var years = new[] { 2022, 2023, 2024, 2025 };
-Info($"Calling GetHolidaysForYearsAsync([{string.Join(", ", years)}], \"norway\")...");
+Info($"Calling GetHolidaysForYearsAsync([{string.Join(", ", years)}], \"DK\")...");
 Console.WriteLine();
 
 try
 {
-    var result = await holidays.GetHolidaysForYearsAsync(years, "norway");
-    Ok($"Fan-out merged {result.Count} results:");
+    var result = await holidays.GetHolidaysForYearsAsync(years, "DK");
+    Ok($"Fan-out merged {result.Count} year(s):");
     foreach (var (year, data) in result.OrderBy(k => k.Key))
-        Console.WriteLine($"    {year} → {Clip(data, 70)}");
+        Console.WriteLine($"    {year} → {SummarizeHolidays(data)}");
 }
 catch (Exception ex)
 {
@@ -297,15 +298,40 @@ static void Dim(string text)
     Console.ResetColor();
 }
 
-static void PrintResult(string name, Task<string> task)
+static void Live(string text)
+{
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine($"  [LIVE] {text}");
+    Console.ResetColor();
+}
+
+static void PrintCalendarResult(string country, Task<string> task)
 {
     if (task.IsCompletedSuccessfully)
-        Ok($"{name}: {Clip(task.Result, 70)}");
+        Ok($"{country}: {SummarizeHolidays(task.Result)}");
     else if (task.IsFaulted)
-        Err($"{name} failed: {task.Exception?.GetBaseException().Message}");
+        Err($"{country} failed: {task.Exception?.GetBaseException().Message}");
     else
-        Warn($"{name} was cancelled");
+        Warn($"{country} was cancelled");
 }
+
+static string SummarizeHolidays(string json)
+{
+    try
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var holidays = doc.RootElement.EnumerateArray().ToList();
+        var names = holidays.Take(3).Select(h => h.GetProperty("localName").GetString() ?? "?");
+        var suffix = holidays.Count > 3 ? $", … (+{holidays.Count - 3} more)" : "";
+        return $"{holidays.Count} holidays: {string.Join(", ", names)}{suffix}";
+    }
+    catch
+    {
+        return Clip(json, 70);
+    }
+}
+
+
 
 static string Clip(string s, int max) => s.Length <= max ? s : s[..max] + "…";
 

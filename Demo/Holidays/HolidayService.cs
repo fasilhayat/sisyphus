@@ -6,30 +6,35 @@ using Oasis.Resilience.Attributes;
 /// Demonstrates <see cref="FanOutAttribute"/>: <see cref="GetHolidaysForYearsAsync"/> receives an
 /// array of years, which the proxy splits and dispatches as parallel per-item invocations
 /// (one per year), then merges the partial <c>Dictionary&lt;int,string&gt;</c> results automatically.
+/// Calls the live Calendara finance-service backend on <c>http://localhost:8080</c>.
 /// </summary>
 public class HolidayService : IHolidayService
 {
-    private static readonly HttpClient Client = new()
-    {
-        BaseAddress = new Uri("http://localhost:5080")
-    };
+    private static readonly HttpClient Client = CreateClient();
 
-    /// <summary>Retrieves Norwegian holidays for a single year with retry and supervision.</summary>
+    private static HttpClient CreateClient()
+    {
+        var client = new HttpClient { BaseAddress = new Uri("http://localhost:8080") };
+        client.DefaultRequestHeaders.Add("X-API-KEY", "Skyw@lker!");
+        return client;
+    }
+
+    /// <summary>Retrieves Norwegian holidays for a single year with retry and supervision via Calendara.</summary>
     [Retry(maxAttempts: 3, initialDelay: 500)]
     [Supervision(strategy: SupervisionStrategy.RestartWithBackoff)]
     public async Task<string> GetNorwegianHolidaysAsync(int year)
     {
-        var response = await Client.GetAsync($"/holidays/norway/{year}");
+        var response = await Client.GetAsync($"/v1/calendar/holidays/NO/{year}");
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
 
-    /// <summary>Retrieves Danish holidays for a single year with retry and supervision.</summary>
+    /// <summary>Retrieves Danish holidays for a single year with retry and supervision via Calendara.</summary>
     [Retry(maxAttempts: 3, initialDelay: 500)]
     [Supervision(strategy: SupervisionStrategy.RestartWithBackoff)]
     public async Task<string> GetDanishHolidaysAsync(int year)
     {
-        var response = await Client.GetAsync($"/holidays/denmark/{year}");
+        var response = await Client.GetAsync($"/v1/calendar/holidays/DK/{year}");
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
@@ -46,10 +51,10 @@ public class HolidayService : IHolidayService
         foreach (var year in years)
         {
             Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.WriteLine($"  [Worker] Fetching {country}/{year}...");
+            Console.WriteLine($"  [Worker] Fetching {country}/{year} from Calendara...");
             Console.ResetColor();
 
-            var response = await Client.GetAsync($"/holidays/{country}/{year}");
+            var response = await Client.GetAsync($"/v1/calendar/holidays/{country}/{year}");
             response.EnsureSuccessStatusCode();
             result[year] = await response.Content.ReadAsStringAsync();
         }
