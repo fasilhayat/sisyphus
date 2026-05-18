@@ -8,6 +8,16 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Oasis.Resilience;
 using Oasis.Resilience.Actors;
+using OpenTelemetry;
+using OpenTelemetry.Metrics;
+
+// ── Metrics / Observability ───────────────────────────────────────────────────
+// Subscribes to all Oasis.Resilience meters and exposes them at
+// http://localhost:9464/metrics  (scraped by Prometheus → Grafana).
+using var meterProvider = Sdk.CreateMeterProviderBuilder()
+    .AddMeter(ResilienceObservability.MeterName)
+    .AddPrometheusHttpListener(o => o.UriPrefixes = ["http://localhost:9464/"])
+    .Build();
 
 // ── Mock server ───────────────────────────────────────────────────────────────
 using var mock = new MockServer();

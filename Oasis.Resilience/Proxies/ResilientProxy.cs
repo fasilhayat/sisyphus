@@ -163,11 +163,13 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
     /// <summary>Dispatches the operation to the appropriate resilience strategy based on configured attributes.</summary>
     private async Task<TResult> ExecuteResilienceStrategy<TResult>(Func<Task<object>> operation, MethodInfo implementedMethod, CircuitBreakerAttribute? breakerAttr, RetryAttribute? retryAttr, SupervisionAttribute? supervisionAttr, CancellationToken ct)
     {
+        var operationKey = $"{typeof(T).FullName}.{implementedMethod.Name}";
+
         if (breakerAttr is not null)
-            return await ExecuteWithCircuitBreaker<TResult>($"{typeof(T).FullName}.{implementedMethod.Name}", operation, breakerAttr, retryAttr, ct);
+            return await ExecuteWithCircuitBreaker<TResult>(operationKey, operation, breakerAttr, retryAttr, ct);
 
         if (retryAttr is not null)
-            return await ExecuteWithRetry<TResult>(operation, retryAttr, ct);
+            return await ExecuteWithRetry<TResult>(operation, retryAttr, ct, operationKey);
 
         if (supervisionAttr is not null)
             return (TResult)await operation();
@@ -225,19 +227,19 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
         }
         catch (Exception ex) when (retryAttr is not null)
         {
-            return await HandleCircuitBreakerFailure<TResult>(ex, operation, retryAttr, ct);
+            return await HandleCircuitBreakerFailure<TResult>(ex, operation, retryAttr, ct, operationKey);
         }
     }
 
     /// <summary>Handles a circuit breaker failure by delegating to the retry strategy.</summary>
-    private async Task<TResult> HandleCircuitBreakerFailure<TResult>(Exception cause, Func<Task<object>> operation, RetryAttribute retryAttr, CancellationToken ct)
+    private async Task<TResult> HandleCircuitBreakerFailure<TResult>(Exception cause, Func<Task<object>> operation, RetryAttribute retryAttr, CancellationToken ct, string operationKey)
     {
         _ = cause;
-        return await ExecuteWithRetry<TResult>(operation, retryAttr, ct);
+        return await ExecuteWithRetry<TResult>(operation, retryAttr, ct, operationKey);
     }
 
     /// <summary>Executes the operation with retry logic via the retry actor, honoring the resolved retry options and exception filter.</summary>
-    private async Task<TResult> ExecuteWithRetry<TResult>(Func<Task<object>> operation, RetryAttribute retryAttr, CancellationToken ct)
+    private async Task<TResult> ExecuteWithRetry<TResult>(Func<Task<object>> operation, RetryAttribute retryAttr, CancellationToken ct, string operationKey = "")
     {
         ct.ThrowIfCancellationRequested();
 
@@ -248,7 +250,8 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
                 operation,
                 resolved.MaxAttempts,
                 TimeSpan.FromMilliseconds(resolved.InitialDelayMs),
-                resolved.RetryOn),
+                resolved.RetryOn,
+                operationKey),
             AskTimeout,
             ct);
 

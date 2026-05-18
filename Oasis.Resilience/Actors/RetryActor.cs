@@ -19,7 +19,8 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
     /// <param name="MaxAttempts">Maximum number of attempts before giving up.</param>
     /// <param name="InitialDelay">Initial delay before the first retry (doubles each attempt).</param>
     /// <param name="RetryOn">Optional exception types to retry on; <c>null</c> retries every exception.</param>
-    public sealed record Execute(Func<Task<object>> Operation, int MaxAttempts, TimeSpan InitialDelay, Type[]? RetryOn = null);
+    /// <param name="OperationKey">Optional label used for metrics (e.g. "IMyService.MyMethod").</param>
+    public sealed record Execute(Func<Task<object>> Operation, int MaxAttempts, TimeSpan InitialDelay, Type[]? RetryOn = null, string OperationKey = "");
     
     /// <summary>
     /// Represents the state and configuration for a scheduled retry operation, including the operation to execute,
@@ -34,7 +35,8 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
     /// failure.</param>
     /// <param name="RetryOn">An optional array of exception types that should trigger a retry if thrown by the operation. If null or empty,
     /// all exceptions may be retried.</param>
-    private sealed record ScheduleRetry(Func<Task<object>> Operation, int MaxAttempts, TimeSpan InitialDelay, int Attempt, IActorRef OriginalSender, Type[]? RetryOn);
+    /// <param name="OperationKey">Label used for metrics tagging.</param>
+    private sealed record ScheduleRetry(Func<Task<object>> Operation, int MaxAttempts, TimeSpan InitialDelay, int Attempt, IActorRef OriginalSender, Type[]? RetryOn, string OperationKey);
 
     /// <summary>
     /// Gets or sets the timer scheduler used for scheduling delayed retries.
@@ -67,7 +69,7 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
     /// <returns>A task that represents the asynchronous execution operation.</returns>
     private async Task HandleExecute(Execute msg)
     {
-        await ExecuteAttemptInternal(msg.Operation, msg.MaxAttempts, msg.InitialDelay, attempt: 1, Sender, msg.RetryOn);
+        await ExecuteAttemptInternal(msg.Operation, msg.MaxAttempts, msg.InitialDelay, attempt: 1, Sender, msg.RetryOn, msg.OperationKey);
     }
 
     /// <summary>
@@ -78,7 +80,7 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
     /// <returns>A task that represents the asynchronous operation.</returns>
     private async Task HandleScheduleRetry(ScheduleRetry msg)
     {
-        await ExecuteAttemptInternal(msg.Operation, msg.MaxAttempts, msg.InitialDelay, msg.Attempt, msg.OriginalSender, msg.RetryOn);
+        await ExecuteAttemptInternal(msg.Operation, msg.MaxAttempts, msg.InitialDelay, msg.Attempt, msg.OriginalSender, msg.RetryOn, msg.OperationKey);
     }
 
     /// <summary>
@@ -93,19 +95,22 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
     /// <param name="originalSender">The actor reference to which the result or failure notification will be sent.</param>
     /// <param name="retryOn">An optional array of exception types that should trigger a retry if thrown by the operation. If null, all
     /// exceptions are considered for retry.</param>
+    /// <param name="operationKey">Label used for metrics tagging (e.g. "IMyService.MyMethod").</param>
     /// <returns>A task that represents the asynchronous execution of the operation attempt and any subsequent retries.</returns>
-    private async Task ExecuteAttemptInternal(Func<Task<object>> operation, int maxAttempts, TimeSpan initialDelay, int attempt, IActorRef originalSender, Type[]? retryOn)
+    private async Task ExecuteAttemptInternal(Func<Task<object>> operation, int maxAttempts, TimeSpan initialDelay, int attempt, IActorRef originalSender, Type[]? retryOn, string operationKey)
     {
         try
         {
             LogDebug("Attempt {0} executing...", attempt);
+            ResilienceMeter.RetryAttempts.Add(1, new KeyValuePair<string, object?>("operation", operationKey));
             var result = await operation();
             LogDebug("Success on attempt {0}", attempt);
             originalSender.Tell(result);
         }
         catch (Exception ex)
         {
-            HandleAttemptFailure(operation, maxAttempts, initialDelay, attempt, originalSender, retryOn, ex);
+            ResilienceMeter.RetryFailures.Add(1, new KeyValuePair<string, object?>("operation", operationKey));
+            HandleAttemptFailure(operation, maxAttempts, initialDelay, attempt, originalSender, retryOn, ex, operationKey);
         }
     }
 
@@ -117,7 +122,8 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
         int attempt,
         IActorRef originalSender,
         Type[]? retryOn,
-        Exception ex)
+        Exception ex,
+        string operationKey)
     {
         LogDebug("Attempt {0} failed: {1}", attempt, ex.Message);
 
@@ -127,7 +133,7 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
             return;
         }
 
-        ScheduleNextAttempt(operation, maxAttempts, initialDelay, attempt, originalSender, retryOn);
+        ScheduleNextAttempt(operation, maxAttempts, initialDelay, attempt, originalSender, retryOn, operationKey);
     }
 
     /// <summary>Schedules the next retry attempt with capped exponential backoff and optional jitter.</summary>
@@ -137,7 +143,8 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
         TimeSpan initialDelay,
         int attempt,
         IActorRef originalSender,
-        Type[]? retryOn)
+        Type[]? retryOn,
+        string operationKey)
     {
         var delay = ComputeBackoff(initialDelay, attempt);
         LogDebug("Retrying in {0}s...", delay.TotalSeconds);
@@ -146,7 +153,7 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
         var timerKey = $"retry-{_timerCounter}-{attempt}";
         Timers!.StartSingleTimer(
             timerKey,
-            new ScheduleRetry(operation, maxAttempts, initialDelay, attempt + 1, originalSender, retryOn),
+            new ScheduleRetry(operation, maxAttempts, initialDelay, attempt + 1, originalSender, retryOn, operationKey),
             delay);
     }
 
