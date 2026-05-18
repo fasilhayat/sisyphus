@@ -10,7 +10,7 @@
 
 services:
   prometheus:
-    image: docker.nykreditnet.net/prom/prometheus:v2.52.0
+    image: prom/prometheus:v2.52.0
     container_name: oasis-prometheus
     volumes:
       - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -19,7 +19,7 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: docker.nykreditnet.net/grafana/grafana:11.0.0
+    image: grafana/grafana:11.0.0
     container_name: oasis-grafana
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
