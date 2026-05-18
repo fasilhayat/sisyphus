@@ -308,6 +308,159 @@
   .cb-closed   { background: #1a4429; color: #3fb950; border: 1px solid #238636; }
   .cb-open     { background: #4a1515; color: #f85149; border: 1px solid #6e1a1a; }
   .cb-halfopen { background: #3d2f00; color: #d29922; border: 1px solid #9e6a03; }
+
+  /* ── "When to use" link ───────────────────────────────────────── */
+  .when-to-use-link {
+    margin-left: auto;
+    padding: 0 32px 0 0;
+    display: flex;
+    align-items: center;
+  }
+  .when-to-use-link button {
+    background: none;
+    border: none;
+    color: #58a6ff;
+    font-size: 0.82rem;
+    cursor: pointer;
+    padding: 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    opacity: 0.85;
+    transition: opacity .15s;
+  }
+  .when-to-use-link button:hover { opacity: 1; text-decoration: underline; }
+
+  /* ── Modal backdrop ───────────────────────────────────────────── */
+  .modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(1, 4, 9, 0.75);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+
+  /* ── Modal box ────────────────────────────────────────────────── */
+  .modal {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    width: min(640px, 92vw);
+    max-height: 88vh;
+    overflow-y: auto;
+    box-shadow: 0 24px 64px rgba(0,0,0,.6);
+    animation: modal-in .18s ease;
+  }
+  @keyframes modal-in {
+    from { transform: translateY(14px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 18px 22px 14px;
+    border-bottom: 1px solid #21262d;
+    position: sticky;
+    top: 0;
+    background: #161b22;
+    z-index: 1;
+  }
+  .modal-header .modal-icon { font-size: 1.3rem; }
+  .modal-header h2 { font-size: 1rem; font-weight: 600; color: #e6edf3; flex: 1; }
+  .modal-close {
+    background: none;
+    border: none;
+    color: #8b949e;
+    font-size: 1.25rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background .15s, color .15s;
+  }
+  .modal-close:hover { background: #21262d; color: #e6edf3; }
+  .modal-body { padding: 20px 22px 24px; }
+
+  /* ── Modal content helpers ────────────────────────────────────── */
+  .modal-body h3 {
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: #8b949e;
+    margin: 18px 0 8px;
+  }
+  .modal-body h3:first-child { margin-top: 0; }
+  .modal-body p {
+    font-size: 0.87rem;
+    color: #c9d1d9;
+    line-height: 1.65;
+  }
+  .modal-body ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .modal-body li {
+    font-size: 0.87rem;
+    color: #c9d1d9;
+    line-height: 1.55;
+    padding-left: 20px;
+    position: relative;
+  }
+  .modal-body li::before {
+    content: attr(data-icon);
+    position: absolute;
+    left: 0;
+  }
+  .tip-box {
+    background: #0d2137;
+    border: 1px solid #1f4a74;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-top: 14px;
+    font-size: 0.84rem;
+    color: #a5d6ff;
+    line-height: 1.6;
+  }
+  .tip-box strong { color: #79c0ff; }
+  .warn-box {
+    background: #2d1f00;
+    border: 1px solid #6e4400;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-top: 14px;
+    font-size: 0.84rem;
+    color: #e3b341;
+    line-height: 1.6;
+  }
+  .warn-box strong { color: #d29922; }
+  .divider {
+    border: none;
+    border-top: 1px solid #21262d;
+    margin: 18px 0;
+  }
+  .combo-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #1f2937;
+    border: 1px solid #30363d;
+    border-radius: 20px;
+    padding: 3px 12px;
+    font-size: 0.78rem;
+    color: #79c0ff;
+    margin-bottom: 10px;
+  }
 </style>
 </head>
 <body>
@@ -322,6 +475,155 @@
   <button class="tab-btn" data-tab="cb">⚡ Circuit Breaker</button>
   <button class="tab-btn" data-tab="supervision">🛡 Supervision</button>
   <button class="tab-btn" data-tab="fanout">🌊 Fan-Out</button>
+  <div class="when-to-use-link">
+    <button id="btnWhenToUse" onclick="openModal(activeTab)">💡 When to use this?</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     MODAL — RETRY
+     ════════════════════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-retry" role="dialog" aria-modal="true" aria-labelledby="modal-retry-title">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-icon">🔁</span>
+      <h2 id="modal-retry-title">When to use Retry</h2>
+      <button class="modal-close" onclick="closeModal('retry')" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <h3>Use Retry when…</h3>
+      <ul>
+        <li data-icon="✅">The failure is <strong>transient</strong> — a momentary network hiccup, DNS timeout, or throttled HTTP 429.</li>
+        <li data-icon="✅">The downstream service is <strong>expected to recover quickly</strong> on its own.</li>
+        <li data-icon="✅">The operation is <strong>idempotent</strong> — calling it twice produces the same result (GET, PUT with the same payload).</li>
+        <li data-icon="✅">You need <strong>exponential back-off with jitter</strong> to avoid thundering-herd problems.</li>
+        <li data-icon="✅">You want automatic retry <strong>without polluting business logic</strong> — just add <code>[Retry]</code>.</li>
+      </ul>
+
+      <h3>Avoid Retry when…</h3>
+      <ul>
+        <li data-icon="❌">The error is <strong>permanent</strong> — a 404 Not Found or a validation failure won't go away by retrying.</li>
+        <li data-icon="❌">The operation has <strong>side effects</strong> (non-idempotent POST that charges a card).</li>
+        <li data-icon="❌">The downstream is <strong>already overloaded</strong> — blindly retrying makes it worse. Combine with Circuit Breaker instead.</li>
+      </ul>
+
+      <div class="tip-box">
+        <strong>💡 Tip:</strong> Combine <code>[Retry]</code> with <code>[CircuitBreaker]</code> on the same method. Retry handles occasional blips; the circuit breaker stops hammering a service that is truly down.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     MODAL — CIRCUIT BREAKER
+     ════════════════════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-cb" role="dialog" aria-modal="true" aria-labelledby="modal-cb-title">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-icon">⚡</span>
+      <h2 id="modal-cb-title">When to use Circuit Breaker</h2>
+      <button class="modal-close" onclick="closeModal('cb')" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <h3>Use Circuit Breaker when…</h3>
+      <ul>
+        <li data-icon="✅">A downstream service can <strong>go down for extended periods</strong> and you must stop hammering it.</li>
+        <li data-icon="✅">You want to <strong>fail fast</strong> and free threads immediately rather than waiting for every timeout to expire.</li>
+        <li data-icon="✅">You need <strong>automatic recovery probing</strong> — the half-open state sends one trial request to check if the service is back.</li>
+        <li data-icon="✅">You have <strong>multiple callers</strong> sharing the same downstream; a single circuit protects them all.</li>
+      </ul>
+
+      <h3>Avoid Circuit Breaker alone when…</h3>
+      <ul>
+        <li data-icon="❌">Failures are <strong>very rare and brief</strong> — the overhead is unnecessary; plain Retry suffices.</li>
+        <li data-icon="❌">You don't have a meaningful <strong>fallback or degraded-mode response</strong> — an open circuit just throws, so callers must handle it.</li>
+      </ul>
+
+      <hr class="divider" />
+
+      <div class="combo-badge">🔁 + ⚡ Retry + Circuit Breaker together</div>
+      <p>This is the most common production pairing:</p>
+      <ul style="margin-top:10px">
+        <li data-icon="1️⃣"><strong>Retry</strong> quietly absorbs the first 1–2 transient blips without the caller noticing.</li>
+        <li data-icon="2️⃣">If failures keep accumulating, <strong>Circuit Breaker</strong> trips open and all calls fail fast — no more retries wasted on a dead service.</li>
+        <li data-icon="3️⃣">After the reset timeout, the circuit moves to <strong>half-open</strong>, lets one probe through, and closes again on success.</li>
+      </ul>
+      <div class="tip-box">
+        <strong>💡 Rule of thumb:</strong> Set <code>maxAttempts</code> on <code>[Retry]</code> lower than <code>failureThreshold</code> on <code>[CircuitBreaker]</code> so a single bad request doesn't trip the breaker by itself.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     MODAL — SUPERVISION
+     ════════════════════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-supervision" role="dialog" aria-modal="true" aria-labelledby="modal-supervision-title">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-icon">🛡</span>
+      <h2 id="modal-supervision-title">When to use Supervision</h2>
+      <button class="modal-close" onclick="closeModal('supervision')" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <h3>Use Supervision when…</h3>
+      <ul>
+        <li data-icon="✅">You have a <strong>long-running background worker</strong> (processor, aggregator, saga coordinator) that must keep running continuously — even if it crashes mid-work.</li>
+        <li data-icon="✅">You need the worker to <strong>restart automatically with a back-off delay</strong> after a failure, without any manual intervention or restart logic in your code.</li>
+        <li data-icon="✅">A failure inside the worker should <strong>stay contained</strong> — callers should not see the crash; the framework absorbs it and recovers silently.</li>
+        <li data-icon="✅">You want to control <strong>what happens on different error types</strong>: carry on with the current state, reset to a clean state, stop permanently, or escalate to a parent.</li>
+        <li data-icon="✅">You are building <strong>async processing pipelines</strong> where individual workers must survive errors without bringing down the whole service.</li>
+      </ul>
+
+      <h3>Avoid Supervision when…</h3>
+      <ul>
+        <li data-icon="❌">Your operation is a simple <strong>one-off outbound call</strong> (HTTP, database) — Retry or Circuit Breaker is simpler and the right fit.</li>
+        <li data-icon="❌">You just need to <strong>retry a single failed request</strong> — that is a transient call problem, not a worker lifecycle problem.</li>
+        <li data-icon="❌">The service is <strong>purely stateless and request/response</strong> — there is no persistent worker to supervise.</li>
+      </ul>
+
+      <div class="tip-box">
+        <strong>💡 Tip:</strong> Think of Supervision as the safety net for <em>workers that live between requests</em> — things that run in the background and must never permanently die. Retry and Circuit Breaker, by contrast, guard <em>individual outbound calls</em> that happen during a request.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     MODAL — FAN-OUT
+     ════════════════════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-fanout" role="dialog" aria-modal="true" aria-labelledby="modal-fanout-title">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-icon">🌊</span>
+      <h2 id="modal-fanout-title">When to use Fan-Out</h2>
+      <button class="modal-close" onclick="closeModal('fanout')" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <h3>Use Fan-Out when…</h3>
+      <ul>
+        <li data-icon="✅">You have a <strong>list of items</strong> (IDs, records, requests) that each need the same async operation applied — prices, quotes, enrichments.</li>
+        <li data-icon="✅">The individual operations are <strong>independent</strong> — the result of one doesn't affect another, so they can run in parallel.</li>
+        <li data-icon="✅">You want <strong>bounded parallelism</strong> — <code>maxWorkers</code> limits concurrent calls so you don't overwhelm the downstream.</li>
+        <li data-icon="✅">You need results <strong>merged back automatically</strong> — Fan-Out aggregates partial dictionaries or lists without boilerplate.</li>
+        <li data-icon="✅">The input list can be <strong>large or variable</strong> — Fan-Out batches work dynamically regardless of list size.</li>
+      </ul>
+
+      <h3>Avoid Fan-Out when…</h3>
+      <ul>
+        <li data-icon="❌">Operations are <strong>sequential by nature</strong> — e.g., each step depends on the previous result (use a pipeline instead).</li>
+        <li data-icon="❌">You only have a <strong>single item</strong> — parallelism overhead isn't worth it; call the service directly.</li>
+        <li data-icon="❌">The downstream has <strong>no rate limiting</strong> tolerance — consider pairing with Circuit Breaker per worker.</li>
+      </ul>
+
+      <div class="warn-box">
+        <strong>⚠ Watch out:</strong> Fan-Out splits on the parameter marked with <code>[FanOut(splitOn: nameof(ids))]</code>. That parameter must be an <code>IEnumerable</code>. Forgetting <code>splitOn</code> falls back to the first enumerable parameter — make the intent explicit.
+      </div>
+      <div class="tip-box">
+        <strong>💡 Tip:</strong> Combine Fan-Out with <code>[Retry]</code> on the same method — each worker call gets its own retry budget, so a single slow shard doesn't block the others.
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="main">
@@ -1082,6 +1384,35 @@ btnRestart.addEventListener('click', () => {
 document.getElementById('tabBar').addEventListener('click', e => {
   const btn = e.target.closest('.tab-btn');
   if (btn) switchTab(btn.dataset.tab);
+});
+
+/* ══════════════════════════════════════════════════════════════════
+   MODAL — open / close
+   ══════════════════════════════════════════════════════════════════ */
+function openModal(tab) {
+  const id = tab === 'cb' ? 'modal-cb' : `modal-${tab}`;
+  const el = document.getElementById(id);
+  if (el) el.classList.add('open');
+}
+
+function closeModal(tab) {
+  const id = tab === 'cb' ? 'modal-cb' : `modal-${tab}`;
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('open');
+}
+
+/* Close on backdrop click */
+document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+  backdrop.addEventListener('click', e => {
+    if (e.target === backdrop) backdrop.classList.remove('open');
+  });
+});
+
+/* Close on Escape key */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-backdrop.open').forEach(el => el.classList.remove('open'));
+  }
 });
 
 /* ── init ── */
