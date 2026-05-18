@@ -1,3 +1,8 @@
+---
+name: tests
+description: 'Generates a comprehensive test coverage report and cyclomatic complexity (CC) score for the .NET solution. Use when asked for test coverage, CC scores, or a coverage and complexity report.'
+---
+
 # Test Coverage and Complexity Skill
 
 ## Description
