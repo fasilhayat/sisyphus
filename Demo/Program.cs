@@ -10,17 +10,12 @@ using Oasis.Resilience;
 using Oasis.Resilience.Actors;
 using Prometheus;
 
-// ── Metrics web server ────────────────────────────────────────────────────────
-// prometheus-net registers metrics in its global registry.
-// Oasis.Resilience emits directly into that registry; this web host serves
-// http://localhost:9464/metrics for Grafana (or any Prometheus scraper).
-var webBuilder = WebApplication.CreateBuilder(args);
-webBuilder.Logging.SetMinimumLevel(LogLevel.Warning);
-webBuilder.WebHost.UseUrls("http://localhost:9464");
-var metricsApp = webBuilder.Build();
-metricsApp.UseMetricServer();
-metricsApp.UseHttpMetrics();
-await metricsApp.StartAsync();
+// ── Metrics server ────────────────────────────────────────────────────────────
+// prometheus-net's standalone HttpListener-based server — no ASP.NET Core needed.
+// Oasis.Resilience emits directly into the global registry; this serves
+// http://localhost:9464/metrics for Prometheus to scrape.
+var metricServer = new MetricServer(port: 9464);
+metricServer.Start();
 
 // ── Mock server ───────────────────────────────────────────────────────────────
 using var mock = new MockServer();
@@ -85,11 +80,11 @@ Chapter(2, "PARALLEL RETRY", "Task.WhenAll — independent retry chains per call
 // ══════════════════════════════════════════════════════════════════════════════
 
 Info("Scenario : DK and NO holiday lookups run concurrently via Task.WhenAll,");
-Info("           each calling the live Calendara backend (localhost:8080).");
-Info("DK       : [Retry(maxAttempts: 2)] — resilient against transient failures.");
-Info("NO       : [Retry(maxAttempts: 3)] — resilient against transient failures.");
+Info("each calling the live Calendara backend (localhost:8080).");
+Info("DK: [Retry(maxAttempts: 2)] — resilient against transient failures.");
+Info("NO: [Retry(maxAttempts: 3)] — resilient against transient failures.");
 Info("Expected : Both complete independently on first attempt. Each retry chain");
-Info("           is isolated — a slow/failing NO call never delays DK.");
+Info("is isolated — a slow/failing NO call never delays DK.");
 Console.WriteLine();
 
 Live("Calendara backend → http://localhost:8080  (X-API-KEY authenticated)");
@@ -230,8 +225,8 @@ try
 {
     var result = await holidays.GetHolidaysForYearsAsync(years, "DK");
     Ok($"Fan-out merged {result.Count} year(s):");
-    foreach (var (year, data) in result.OrderBy(k => k.Key))
-        Console.WriteLine($"    {year} → {SummarizeHolidays(data)}");
+    foreach (var kvp in result.OrderBy(k => k.Key))
+        Console.WriteLine($"    {kvp.Key} → {SummarizeHolidays(kvp.Value)}");
 }
 catch (Exception ex)
 {
@@ -243,7 +238,7 @@ Banner("DEMO COMPLETE");
 Console.WriteLine("Press ENTER to exit...");
 Console.ReadLine();
 
-await metricsApp.StopAsync();
+metricServer.Stop();
 
 // ════════════════════════════════════════════════════════════════════════════
 // Helpers

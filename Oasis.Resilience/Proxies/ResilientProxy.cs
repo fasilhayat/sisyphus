@@ -2,7 +2,6 @@
 
 using Actors;
 using Akka.Actor;
-using Akka.Pattern;
 using Attributes;
 using System.Collections;
 using System.Collections.Concurrent;
@@ -297,21 +296,37 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
     /// </summary>
     private async Task<TResult> HandleFanOut<TResult>(MethodInfo method, object[] args, FanOutAttribute fanOut)
     {
+        var operationKey = $"{typeof(T).FullName}.{method.Name}";
         var maxWorkers = OptionsResolver.ResolveMaxWorkers(fanOut, FanOutOptions);
         var parameters = method.GetParameters();
         var splitIndex = FindSplitParameterIndex(parameters, fanOut.SplitOn);
         var splitArray = (Array)args[splitIndex];
 
+        ResilienceMeter.FanOutDispatched.WithLabels(operationKey).Inc(splitArray.Length);
+
         var gate = new SemaphoreSlim(Math.Max(1, maxWorkers), Math.Max(1, maxWorkers));
         var tasks = new List<Task<TResult>>(splitArray.Length);
 
         for (int i = 0; i < splitArray.Length; i++)
-            tasks.Add(InvokeForSingleItem<TResult>(method, args, splitIndex, splitArray.GetValue(i)!, gate));
+            tasks.Add(InvokeForSingleItemTracked<TResult>(method, args, splitIndex, splitArray.GetValue(i)!, gate, operationKey));
 
         _ = DisposeGateWhenComplete(tasks, gate);
 
         var results = await Task.WhenAll(tasks).ConfigureAwait(false);
         return AggregateBuiltIn<TResult>(results);
+    }
+
+    private async Task<TResult> InvokeForSingleItemTracked<TResult>(MethodInfo method, object[] args, int splitIndex, object item, SemaphoreSlim gate, string operationKey)
+    {
+        try
+        {
+            return await InvokeForSingleItem<TResult>(method, args, splitIndex, item, gate).ConfigureAwait(false);
+        }
+        catch
+        {
+            ResilienceMeter.FanOutFailures.WithLabels(operationKey).Inc();
+            throw;
+        }
     }
 
     /// <summary>

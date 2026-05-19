@@ -13,7 +13,7 @@ public class CalendarService : ICalendarService
 
     private static HttpClient CreateClient()
     {
-        var client = new HttpClient { BaseAddress = new Uri("http://localhost:8080") };
+        var client = new HttpClient(new HttpClientHandler { UseProxy = false }) { BaseAddress = new Uri("http://localhost:8080") };
         client.DefaultRequestHeaders.Add("X-API-KEY", "Skyw@lker!");
         return client;
     }

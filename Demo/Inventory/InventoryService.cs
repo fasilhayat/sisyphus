@@ -9,7 +9,7 @@ using Oasis.Resilience.Attributes;
 /// </summary>
 public class InventoryService : IInventoryService
 {
-    private static readonly HttpClient Client = new()
+    private static readonly HttpClient Client = new(new HttpClientHandler { UseProxy = false })
     {
         BaseAddress = new Uri("http://localhost:5080")
     };

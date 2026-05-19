@@ -4,7 +4,7 @@ datasources:
   - name: Prometheus
     type: prometheus
     uid: prometheus
-    url: http://host.docker.internal:9464
+    url: http://prometheus:9090
     access: proxy
     isDefault: true
-    editable: true
+    editable: false
