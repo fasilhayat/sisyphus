@@ -30,7 +30,7 @@ internal interface ICalendarService
     /// Fetches holidays for multiple years in parallel.
     /// The proxy splits the <paramref name="years"/> array and dispatches one worker actor
     /// per year (bounded by <c>maxWorkers</c>), then merges the partial results.
-    /// Decorated with <c>[FanOut(maxWorkers: 5)]</c>.
+    /// Decorated with <c>[FanOut(splitOn: "years", maxWorkers: 5)]</c>.
     /// </summary>
     Task<Dictionary<int, string>> GetHolidaysForYearsAsync(int[] years, string country);
 }

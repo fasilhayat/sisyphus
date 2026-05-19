@@ -63,18 +63,15 @@ public class CalendarService : ICalendarService
     /// Fan-out: the proxy splits <paramref name="years"/>, calls this body once per year
     /// across up to 5 parallel worker actors, then merges the partial dictionaries.
     /// </summary>
-    [FanOut(maxWorkers: 5)]
+    [FanOut(splitOn: "years", maxWorkers: 5)]
     public async Task<Dictionary<int, string>> GetHolidaysForYearsAsync(int[] years, string country)
     {
-        var result = new Dictionary<int, string>();
-        foreach (var year in years)
-        {
-            Log($"[Worker] {country}/{year} → Calendar API...");
-            var response = await Client.GetAsync($"/v1/calendar/holidays/{country}/{year}");
-            response.EnsureSuccessStatusCode();
-            result[year] = await response.Content.ReadAsStringAsync();
-        }
-        return result;
+        // The proxy splits the years array and invokes this body once per year in parallel.
+        // Each invocation receives a single-element array — years[0] is always the one assigned year.
+        Log($"[Worker] {country}/{years[0]} → Calendar API...");
+        var response = await Client.GetAsync($"/v1/calendar/holidays/{country}/{years[0]}");
+        response.EnsureSuccessStatusCode();
+        return new Dictionary<int, string> { [years[0]] = await response.Content.ReadAsStringAsync() };
     }
 
     // -- Helpers ---------------------------------------------------------------
