@@ -4,15 +4,15 @@
 
 ## 📈 Quality Evolution
 
-| Dimension | Baseline | Fix Cycle 1 | Optimisation | v2.4 · 2026-05-11 | v2.5 · 2026-05-11 |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Package design & correctness | 7.8 | 9.1 | 9.4 | 9.7 | **9.8** |
-| AOP utilisation | 7.5 | 8.7 | 8.9 | 9.0 | **9.2** |
-| Test coverage & stability | 7.0 | 8.6 | 8.7 | 8.8 | **8.8** |
-| Execution overhead | 7.5 | 8.5 | 8.8 | 9.3 | **9.5** |
-| Developer experience | 7.8 | 9.0 | 9.2 | 9.4 | **9.8** |
-| Cyclomatic complexity | 9.0 | 10.0 | 10.0 | 10.0 | **10.0** |
-| 🏆 **Overall** | 7.8 | 9.15 | 9.23 | 9.45 | 🟢 **9.68** |
+| Dimension | Baseline | Fix Cycle 1 | Optimisation | v2.4 · 2026-05-11 | v2.5 · 2026-05-11 | v2.6 · 2026-05-19 |
+|--|:---:|:---:|:---:|:---:|:---:|:---:|
+| Package design & correctness | 7.8 | 9.1 | 9.4 | 9.7 | 9.8 | **9.8** |
+| AOP utilisation | 7.5 | 8.7 | 8.9 | 9.0 | 9.2 | **9.2** |
+| Test coverage & stability | 7.0 | 8.6 | 8.7 | 8.8 | 8.8 | **9.2** |
+| Execution overhead | 7.5 | 8.5 | 8.8 | 9.3 | 9.5 | **9.5** |
+| Developer experience | 7.8 | 9.0 | 9.2 | 9.4 | 9.8 | **9.8** |
+| Cyclomatic complexity | 9.0 | 10.0 | 10.0 | 10.0 | 10.0 | **10.0** |
+| 🏆 **Overall** | 7.8 | 9.15 | 9.23 | 9.45 | 🟢 9.68 | 🟢 **9.77** |
 
 ---
 

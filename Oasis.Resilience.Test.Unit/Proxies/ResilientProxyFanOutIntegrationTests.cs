@@ -113,4 +113,84 @@ public class ResilientProxyFanOutIntegrationTests
         Assert.Equal("value-20", result[20]);
         Assert.Equal("value-30", result[30]);
     }
+
+    /// <summary>
+    /// Contract for a service that concatenates strings into a list using fan-out.
+    /// </summary>
+    public interface IConcatService
+    {
+        /// <summary>Concats each prefix with a suffix using fan-out.</summary>
+        Task<List<string>> ConcatAllAsync(string[] prefixes);
+    }
+
+    /// <summary>
+    /// Implementation — each fan-out call returns a single-element list.
+    /// </summary>
+    public sealed class ConcatService : IConcatService
+    {
+        /// <inheritdoc/>
+        [FanOut(maxWorkers: 4)]
+        public Task<List<string>> ConcatAllAsync(string[] prefixes)
+            => Task.FromResult(prefixes.Select(p => $"{p}-suffix").ToList());
+    }
+
+    /// <summary>
+    /// Verifies that partial <c>List&lt;T&gt;</c> results are concatenated into one list.
+    /// Covers <see cref="Proxies.ResilientProxy{T}.ConcatLists"/>.
+    /// </summary>
+    [Fact]
+    public async Task Proxy_should_concat_list_results_for_fanout()
+    {
+        var services = new ServiceCollection();
+        services.AddResilience(retry => retry.LogLevel = LogLevel.None);
+        services.AddResilientService<IConcatService, ConcatService>();
+        var service = services.BuildServiceProvider().GetRequiredService<IConcatService>();
+
+        var result = await service.ConcatAllAsync(["a", "b", "c"]);
+
+        Assert.Equal(3, result.Count);
+        Assert.Contains("a-suffix", result);
+        Assert.Contains("b-suffix", result);
+        Assert.Contains("c-suffix", result);
+    }
+
+    /// <summary>
+    /// Contract for a service whose fan-out worker can fail.
+    /// </summary>
+    public interface IFaultyFanOutService
+    {
+        /// <summary>Returns strings but the first item throws.</summary>
+        Task<List<string>> GetWithFailureAsync(int[] items);
+    }
+
+    /// <summary>
+    /// Implementation that throws for item 0.
+    /// </summary>
+    public sealed class FaultyFanOutService : IFaultyFanOutService
+    {
+        /// <inheritdoc/>
+        [FanOut(maxWorkers: 3)]
+        public Task<List<string>> GetWithFailureAsync(int[] items)
+        {
+            if (items.Length == 1 && items[0] == 0)
+                throw new InvalidOperationException("Simulated fan-out worker failure");
+            return Task.FromResult(items.Select(i => $"ok-{i}").ToList());
+        }
+    }
+
+    /// <summary>
+    /// Verifies that when a fan-out worker throws, the exception propagates and other
+    /// workers are still awaited. Covers <see cref="Proxies.ResilientProxy{T}.InvokeForSingleItemTracked"/> catch block.
+    /// </summary>
+    [Fact]
+    public async Task Proxy_should_propagate_fanout_worker_failure()
+    {
+        var services = new ServiceCollection();
+        services.AddResilience(retry => retry.LogLevel = LogLevel.None);
+        services.AddResilientService<IFaultyFanOutService, FaultyFanOutService>();
+        var service = services.BuildServiceProvider().GetRequiredService<IFaultyFanOutService>();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GetWithFailureAsync([0, 1, 2]));
+        Assert.Contains("Simulated fan-out worker failure", ex.Message);
+    }
 }

@@ -126,6 +126,68 @@ public class ResilientProxyComprehensiveTests : ProxyTestBase
     private Task NonGenericTask() => Task.CompletedTask;
 
     /// <summary>
+    /// Verifies the retry-only path (no circuit breaker) executes correctly.
+    /// </summary>
+    [Fact]
+    public async Task InvokeGeneric_should_execute_retry_only_path()
+    {
+        var actorSystem = CreateActorSystem();
+        var proxy = DispatchProxy.Create<ITestService3, ResilientProxy<ITestService3>>();
+        var resilientProxy = proxy as ResilientProxy<ITestService3> ??
+            throw new InvalidOperationException("Failed to create proxy");
+
+        var retryActor = actorSystem.ActorOf(Props.Create(() => new RetryActor(new RetryOptions(), null)), "retry-only");
+        resilientProxy.DecoratedInstance = new TestService3();
+        resilientProxy.ResilienceActorRef = retryActor;
+        resilientProxy.ActorSystem = actorSystem;
+
+        var serviceProxy = (ITestService3)(object)proxy;
+        var result = await serviceProxy.GetDataWithRetryOnly();
+        Assert.Equal("retry-only-success", result);
+    }
+
+    /// <summary>
+    /// Verifies the supervision-only path (no retry, no circuit breaker) executes correctly.
+    /// </summary>
+    [Fact]
+    public async Task InvokeGeneric_should_execute_supervision_only_path()
+    {
+        var actorSystem = CreateActorSystem();
+        var proxy = DispatchProxy.Create<ITestService3, ResilientProxy<ITestService3>>();
+        var resilientProxy = proxy as ResilientProxy<ITestService3> ??
+            throw new InvalidOperationException("Failed to create proxy");
+
+        resilientProxy.DecoratedInstance = new TestService3();
+        resilientProxy.ActorSystem = actorSystem;
+
+        var serviceProxy = (ITestService3)(object)proxy;
+        var result = await serviceProxy.GetDataWithSupervisionOnly();
+        Assert.Equal("supervision-only-success", result);
+    }
+
+    /// <summary>
+    /// Verifies that a method with no resilience attributes throws <see cref="InvalidOperationException"/>
+    /// when routed through <see cref="ResilientProxy{T}.InvokeResilient"/>.
+    /// </summary>
+    [Fact]
+    public async Task InvokeResilient_should_throw_when_no_resilience_attributes()
+    {
+        var proxy = DispatchProxy.Create<ITestService, ResilientProxy<ITestService>>();
+        var resilientProxy = proxy as ResilientProxy<ITestService> ??
+            throw new InvalidOperationException("Failed to create proxy");
+        resilientProxy.DecoratedInstance = new TestService();
+
+        var method = typeof(ITestService).GetMethod(nameof(ITestService.GetDataNoAttributes));
+        var invokeMethod = typeof(ResilientProxy<ITestService>).GetMethod("InvokeResilient",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        var task = (Task)invokeMethod!.Invoke(resilientProxy, [method!, Array.Empty<object>(), null!, null!, null!, null!])!;
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => task);
+        Assert.Contains("No resilience attributes configured", ex.Message);
+    }
+
+    /// <summary>
     /// Test service interface for retry and circuit breaker tests.
     /// </summary>
     public interface ITestService
@@ -162,6 +224,18 @@ public class ResilientProxyComprehensiveTests : ProxyTestBase
         /// <returns>A task that yields a string.</returns>
         [Supervision(SupervisionStrategy.Restart)]
         Task<string> GetDataWithSupervision();
+    }
+
+    /// <summary>
+    /// Test service interface for retry-only and supervision-only paths.
+    /// </summary>
+    public interface ITestService3
+    {
+        [Retry(3, 10)]
+        Task<string> GetDataWithRetryOnly();
+
+        [Supervision(SupervisionStrategy.Restart)]
+        Task<string> GetDataWithSupervisionOnly();
     }
 
     /// <summary>
@@ -218,5 +292,15 @@ public class ResilientProxyComprehensiveTests : ProxyTestBase
         {
             return Task.FromResult("supervised");
         }
+    }
+
+    /// <summary>
+    /// Test implementation of <see cref="ITestService3"/>.
+    /// </summary>
+    private class TestService3 : ITestService3
+    {
+        public Task<string> GetDataWithRetryOnly() => Task.FromResult("retry-only-success");
+
+        public Task<string> GetDataWithSupervisionOnly() => Task.FromResult("supervision-only-success");
     }
 }

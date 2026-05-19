@@ -3,11 +3,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Oasis.Resilience;
 using Oasis.Resilience.Actors;
-using Prometheus;
+// using Prometheus;
 
-// -- Metrics server -----------------------------------------------------------
-var metricServer = new MetricServer(port: 9464);
-metricServer.Start();
+// // -- Metrics server -----------------------------------------------------------
+// var metricServer = new MetricServer(port: 9464);
+// metricServer.Start();
 
 // -- DI setup -----------------------------------------------------------------
 var services = new ServiceCollection();
@@ -224,7 +224,7 @@ Banner("DEMO COMPLETE");
 Console.WriteLine("Press ENTER to exit...");
 Console.ReadLine();
 
-metricServer.Stop();
+// metricServer.Stop();
 
 // =============================================================================
 // Helpers
