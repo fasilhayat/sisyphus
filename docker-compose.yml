@@ -5,19 +5,11 @@
 #   dotnet run --project Demo        (starts app + /metrics on :9464)
 #   open http://localhost:3000       (Grafana — admin / admin)
 #
-# Prometheus scrapes the Demo app at http://host.docker.internal:9464/metrics
-# Grafana is pre-provisioned with the Prometheus datasource and a dashboard.
+# The Demo app exposes http://localhost:9464/metrics via prometheus-net.
+# To enable full PromQL queries and dashboard data, add a Prometheus container
+# that scrapes host.docker.internal:9464 and point the Grafana datasource at it.
 
 services:
-  prometheus:
-    image: prom/prometheus:v2.52.0
-    container_name: oasis-prometheus
-    volumes:
-      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    ports:
-      - "9090:9090"
-    restart: unless-stopped
-
   grafana:
     image: grafana/grafana:11.0.0
     container_name: oasis-grafana
@@ -29,6 +21,4 @@ services:
       - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "3000:3000"
-    depends_on:
-      - prometheus
     restart: unless-stopped

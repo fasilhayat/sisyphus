@@ -8,16 +8,19 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Oasis.Resilience;
 using Oasis.Resilience.Actors;
-using OpenTelemetry;
-using OpenTelemetry.Metrics;
+using Prometheus;
 
-// ── Metrics / Observability ───────────────────────────────────────────────────
-// Subscribes to all Oasis.Resilience meters and exposes them at
-// http://localhost:9464/metrics  (scraped by Prometheus → Grafana).
-using var meterProvider = Sdk.CreateMeterProviderBuilder()
-    .AddMeter(ResilienceObservability.MeterName)
-    .AddPrometheusHttpListener(o => o.UriPrefixes = ["http://localhost:9464/"])
-    .Build();
+// ── Metrics web server ────────────────────────────────────────────────────────
+// prometheus-net registers metrics in its global registry.
+// Oasis.Resilience emits directly into that registry; this web host serves
+// http://localhost:9464/metrics for Grafana (or any Prometheus scraper).
+var webBuilder = WebApplication.CreateBuilder(args);
+webBuilder.Logging.SetMinimumLevel(LogLevel.Warning);
+webBuilder.WebHost.UseUrls("http://localhost:9464");
+var metricsApp = webBuilder.Build();
+metricsApp.UseMetricServer();
+metricsApp.UseHttpMetrics();
+await metricsApp.StartAsync();
 
 // ── Mock server ───────────────────────────────────────────────────────────────
 using var mock = new MockServer();
@@ -239,6 +242,8 @@ Console.WriteLine();
 Banner("DEMO COMPLETE");
 Console.WriteLine("Press ENTER to exit...");
 Console.ReadLine();
+
+await metricsApp.StopAsync();
 
 // ════════════════════════════════════════════════════════════════════════════
 // Helpers
