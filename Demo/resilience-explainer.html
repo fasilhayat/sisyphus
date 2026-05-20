@@ -672,19 +672,20 @@ const mt  = s => `<tspan class="mth">${s}</tspan>`;
 /* ╔══════════════════════════════════════════════════════════════════╗
    ║  RETRY tab                                                       ║
    ╚══════════════════════════════════════════════════════════════════╝ */
-const RETRY_CODE = `<span class="file-sep">📄 Program.cs</span><span id="rp0">services.${mt('AddResilient')}&lt;${cl('IBondService')},</span>
-<span id="rp1">                 ${cl('BondService')}&gt;();</span>
-<span class="file-sep">📄 BondService.cs</span><span id="rs0">${kw('public class')} ${cl('BondService')} : ${cl('IBondService')}</span>
+const RETRY_CODE = `<span class="file-sep">📄 Program.cs</span><span id="rp0">services.${mt('AddResilient')}&lt;${cl('ICalendarService')},</span>
+<span id="rp1">                 ${cl('CalendarService')}&gt;();</span>
+<span class="file-sep">📄 CalendarService.cs</span><span id="rs0">${kw('public class')} ${cl('CalendarService')} : ${cl('ICalendarService')}</span>
 <span id="rs1">{</span>
 <span id="rs2">  ${at('[Retry')}(maxAttempts: ${nm('3')},</span>
-<span id="rs3">         initialDelayMs: ${nm('500')}${at(']')}</span>
-<span id="rs4">  ${kw('public async')} ${cl('Task')}&lt;${cl('BondData')}&gt;</span>
-<span id="rs5">    ${mt('GetBondsAsync')}()</span>
+<span id="rs3">         initialDelay: ${nm('500')}${at(']')}</span>
+<span id="rs4">  ${kw('public async')} ${cl('Task')}&lt;${kw('string')}&gt;</span>
+<span id="rs5">    ${mt('GetHolidaysAsync')}(${kw('string')} country, ${kw('int')} year)</span>
 <span id="rs6">  {</span>
-<span id="rs7">    ${kw('var')} r = ${kw('await')} _http.${mt('GetAsync')}(url);</span>
-<span id="rs8">    ${kw('return await')} r.${mt('ReadAsync')}&lt;${cl('BondData')}&gt;();</span>
-<span id="rs9">  }</span>
-<span id="rsa">}</span>
+<span id="rs7">    ${kw('var')} r = ${kw('await')} _http.${mt('GetAsync')}(</span>
+<span id="rs8">      $${st('"/v1/calendar/holidays/{country}/{year}"')});</span>
+<span id="rs9">    ${kw('return await')} r.Content.${mt('ReadAsStringAsync')}();</span>
+<span id="rsa">  }</span>
+<span id="rsb">}</span>
 `;
 
 const RETRY = {
@@ -693,7 +694,7 @@ const RETRY = {
     { id:'caller',   x:80,  y:190, label:'Caller',        sub:'Your code' },
     { id:'proxy',    x:240, y:190, label:'DispatchProxy',  sub:'[Retry] intercepted' },
     { id:'actor',    x:440, y:190, label:'RetryActor',     sub:'Akka.NET' },
-    { id:'http',     x:630, y:190, label:'HTTP Service',   sub:'localhost:5080' },
+    { id:'http',     x:630, y:190, label:'Calendar API',   sub:'localhost:8080' },
   ],
   edges: [
     { id:'e1', from:'caller', to:'proxy' },
@@ -714,13 +715,13 @@ const RETRY = {
       nodes:   { caller:'active', proxy:'default', actor:'default', http:'default' },
       packets: [],
       code:    ['rp0','rp1'],
-      desc:    '<strong>AddResilient&lt;IBondService, BondService&gt;()</strong> in Program.cs wraps the class in a <em>DispatchProxy</em> at startup.'
+      desc:    '<strong>AddResilient&lt;ICalendarService, CalendarService&gt;()</strong> in Program.cs wraps the class in a <em>DispatchProxy</em> at startup.'
     },
     {
       nodes:   { caller:'active', proxy:'default', actor:'default', http:'default' },
       packets: [ { edge:'e1', color:'#58a6ff', delay:0 } ],
       code:    ['rs4','rs5'],
-      desc:    'Your code calls <strong>GetBondsAsync()</strong> — the call hits the proxy, not your class directly.'
+      desc:    'Your code calls <strong>GetHolidaysAsync("DK", 2025)</strong> — the call hits the proxy, not your class directly.'
     },
     {
       nodes:   { caller:'default', proxy:'active', actor:'default', http:'default' },
@@ -764,22 +765,22 @@ const RETRY = {
 /* ╔══════════════════════════════════════════════════════════════════╗
    ║  CIRCUIT BREAKER tab                                             ║
    ╚══════════════════════════════════════════════════════════════════╝ */
-const CB_CODE = `<span class="file-sep">📄 Program.cs</span><span id="cp0">services.${mt('AddResilient')}&lt;${cl('IInventoryService')},</span>
-<span id="cp1">                 ${cl('InventoryService')}&gt;();</span>
-<span class="file-sep">📄 InventoryService.cs</span><span id="cs0">${kw('public class')} ${cl('InventoryService')}</span>
-<span id="cs1">  : ${cl('IInventoryService')}</span>
+const CB_CODE = `<span class="file-sep">📄 Program.cs</span><span id="cp0">services.${mt('AddResilient')}&lt;${cl('ICalendarService')},</span>
+<span id="cp1">                 ${cl('CalendarService')}&gt;();</span>
+<span class="file-sep">📄 CalendarService.cs</span><span id="cs0">${kw('public class')} ${cl('CalendarService')}</span>
+<span id="cs1">  : ${cl('ICalendarService')}</span>
 <span id="cs2">{</span>
 <span id="cs3">  ${at('[CircuitBreaker')}(</span>
 <span id="cs4">    failureThreshold: ${nm('3')},</span>
-<span id="cs5">    resetTimeoutMs:   ${nm('5000')}${at(']')}</span>
-<span id="cs6">  ${at('[Retry')}(maxAttempts: ${nm('2')}${at(']')}</span>
-<span id="cs7">  ${kw('public async')} ${cl('Task')}&lt;${cl('Stock')}&gt;</span>
-<span id="cs8">    ${mt('GetStockAsync')}()</span>
+<span id="cs5">    resetTimeout: ${nm('5000')}${at(']')}</span>
+<span id="cs6">  ${at('[Retry')}(maxAttempts: ${nm('2')}, initialDelay: ${nm('300')}${at(']')}</span>
+<span id="cs7">  ${kw('public async')} ${cl('Task')}&lt;${kw('string')}&gt;</span>
+<span id="cs8">    ${mt('GetHolidaysWithBreakerAsync')}(${kw('string')} country, ${kw('int')} year)</span>
 <span id="cs9">  {</span>
-<span id="csa">    ${kw('return await')} _http</span>
-<span id="csb">      .${mt('GetAsync')}&lt;${cl('Stock')}&gt;(url);</span>
-<span id="csc">  }</span>
-<span id="csd">}</span>
+<span id="csa">    ${kw('var')} r = ${kw('await')} _http.${mt('GetAsync')}(</span>
+<span id="csb">      $${st('"/v1/calendar/holidays/{country}/{year}"')});</span>
+<span id="csc">    ${kw('return await')} r.Content.${mt('ReadAsStringAsync')}();</span>
+<span id="csd">  }</span>
 `;
 
 const CB = {
@@ -789,7 +790,7 @@ const CB = {
     { id:'caller',  x:80,  y:190, label:'Caller',       sub:'Your code' },
     { id:'proxy',   x:240, y:190, label:'DispatchProxy', sub:'[CB]+[Retry]' },
     { id:'cbactor', x:440, y:190, label:'Circuit Breaker', sub:'Akka.NET' },
-    { id:'http',    x:630, y:190, label:'HTTP Service',  sub:'upstream' },
+    { id:'http',    x:630, y:190, label:'Calendar API',  sub:'localhost:8080' },
   ],
   edges: [
     { id:'e1', from:'caller',  to:'proxy'   },
@@ -827,7 +828,7 @@ const CB = {
       packets: [ {edge:'e1',color:'#58a6ff',delay:0},{edge:'e2',color:'#58a6ff',delay:200},{edge:'e3',color:'#f85149',delay:400},{edge:'e4',color:'#f85149',delay:700} ],
       cbState: 'OPEN',
       code:    ['cs3','cs4','cs5'],
-      desc:    '🔴 Call 3 — failure threshold reached! Circuit <strong>OPENS</strong>. The upstream is clearly unhealthy.'
+      desc:    '🔴 Call 3 — failure threshold reached! Circuit <strong>OPENS</strong>. The Calendar API is clearly unhealthy.'
     },
     {
       nodes:   { caller:'active', proxy:'active', cbactor:'error', http:'dim' },
@@ -863,21 +864,23 @@ const CB = {
 /* ╔══════════════════════════════════════════════════════════════════╗
    ║  SUPERVISION tab                                                 ║
    ╚══════════════════════════════════════════════════════════════════╝ */
-const SUP_CODE = `<span class="file-sep">📄 Program.cs</span><span id="sp0">services.${mt('AddResilient')}&lt;${cl('IPipelineService')},</span>
-<span id="sp1">                 ${cl('PipelineService')}&gt;();</span>
-<span class="file-sep">📄 PipelineService.cs</span><span id="ss0">${kw('public class')} ${cl('PipelineService')}</span>
-<span id="ss1">  : ${cl('IPipelineService')}</span>
+const SUP_CODE = `<span class="file-sep">📄 Program.cs</span><span id="sp0">services.${mt('AddResilient')}&lt;${cl('ICalendarService')},</span>
+<span id="sp1">                 ${cl('CalendarService')}&gt;();</span>
+<span class="file-sep">📄 CalendarService.cs</span><span id="ss0">${kw('public class')} ${cl('CalendarService')}</span>
+<span id="ss1">  : ${cl('ICalendarService')}</span>
 <span id="ss2">{</span>
 <span id="ss3">  ${at('[Supervision')}(</span>
 <span id="ss4">    ${cl('SupervisionStrategy')}.${mt('RestartWithBackoff')},</span>
-<span id="ss5">    maxRetries: ${nm('4')}, backoffMinMs: ${nm('500')}${at(']')}</span>
-<span id="ss6">  ${at('[Retry')}(maxAttempts: ${nm('3')}${at(']')}</span>
-<span id="ss7">  ${kw('public async')} ${cl('Task')}</span>
-<span id="ss8">    ${mt('RunPipelineAsync')}()</span>
+<span id="ss5">    maxRetries: ${nm('10')}, backoffMinMs: ${nm('500')}${at(']')}</span>
+<span id="ss6">  ${at('[Retry')}(maxAttempts: ${nm('2')}${at(']')}</span>
+<span id="ss7">  ${kw('public async')} ${cl('Task')}&lt;${kw('string')}&gt;</span>
+<span id="ss8">    ${mt('GetHolidaysWithSupervisionAsync')}(${kw('string')} country, ${kw('int')} year)</span>
 <span id="ss9">  {</span>
-<span id="ssa">    ${kw('await')} _http.${mt('PostAsync')}(url, data);</span>
-<span id="ssb">  }</span>
-<span id="ssc">}</span>
+<span id="ssa">    ${kw('var')} r = ${kw('await')} _http.${mt('GetAsync')}(</span>
+<span id="ssb">      $${st('"/v1/calendar/holidays/{country}/{year}"')});</span>
+<span id="ssc">    ${kw('return await')} r.Content.${mt('ReadAsStringAsync')}();</span>
+<span id="ssd">  }</span>
+<span id="sse">}</span>
 `;
 
 const SUP = {
@@ -887,7 +890,7 @@ const SUP = {
     { id:'proxy',      x:210, y:190, label:'DispatchProxy',  sub:'[Supervision]' },
     { id:'supervisor', x:390, y:120, label:'BackoffSupervisor', sub:'Akka parent', shape:'diamond' },
     { id:'worker',     x:390, y:260, label:'WorkerActor',    sub:'restartable' },
-    { id:'http',       x:590, y:190, label:'HTTP Service',   sub:'upstream' },
+    { id:'http',       x:590, y:190, label:'Calendar API',   sub:'localhost:8080' },
   ],
   edges: [
     { id:'e1', from:'caller',     to:'proxy'      },
@@ -910,13 +913,13 @@ const SUP = {
       nodes:   { caller:'active', proxy:'active', supervisor:'active', worker:'default', http:'default' },
       packets: [ {edge:'e1',color:'#58a6ff',delay:0},{edge:'e2',color:'#58a6ff',delay:300} ],
       code:    ['ss6','ss7','ss8'],
-      desc:    'Call dispatched. The proxy creates the supervisor + child WorkerActor. The message flows to the supervisor.'
+      desc:    'Call dispatched. The proxy creates the supervisor + child WorkerActor. The message flows to the supervisor with the <strong>GetHolidaysWithSupervisionAsync</strong> operation.'
     },
     {
       nodes:   { caller:'default', proxy:'default', supervisor:'active', worker:'active', http:'active' },
       packets: [ {edge:'e3',color:'#58a6ff',delay:0},{edge:'e4',color:'#58a6ff',delay:300} ],
       code:    ['ssa'],
-      desc:    'The supervisor forwards to the WorkerActor, which calls the HTTP service.'
+      desc:    'The supervisor forwards to the WorkerActor, which calls the Calendar API for holidays.'
     },
     {
       nodes:   { caller:'default', proxy:'default', supervisor:'warn', worker:'error', http:'error' },
@@ -934,7 +937,7 @@ const SUP = {
       nodes:   { caller:'default', proxy:'default', supervisor:'active', worker:'active', http:'active' },
       packets: [ {edge:'e3',color:'#58a6ff',delay:0},{edge:'e4',color:'#3fb950',delay:300},{edge:'e5',color:'#3fb950',delay:600} ],
       code:    ['ssa'],
-      desc:    '✅ Fresh WorkerActor calls the service successfully. The actor is in a clean state — no lingering error.'
+      desc:    '✅ Fresh WorkerActor calls the Calendar API successfully. The actor is in a clean state — no lingering error.'
     },
     {
       nodes:   { caller:'success', proxy:'success', supervisor:'success', worker:'success', http:'success' },
@@ -948,21 +951,22 @@ const SUP = {
 /* ╔══════════════════════════════════════════════════════════════════╗
    ║  FAN-OUT tab                                                     ║
    ╚══════════════════════════════════════════════════════════════════╝ */
-const FO_CODE = `<span class="file-sep">📄 Program.cs</span><span id="fp0">services.${mt('AddResilient')}&lt;${cl('IHolidayService')},</span>
-<span id="fp1">                 ${cl('HolidayService')}&gt;();</span>
-<span class="file-sep">📄 HolidayService.cs</span><span id="fs0">${kw('public class')} ${cl('HolidayService')}</span>
-<span id="fs1">  : ${cl('IHolidayService')}</span>
+const FO_CODE = `<span class="file-sep">📄 Program.cs</span><span id="fp0">services.${mt('AddResilient')}&lt;${cl('ICalendarService')},</span>
+<span id="fp1">                 ${cl('CalendarService')}&gt;();</span>
+<span class="file-sep">📄 CalendarService.cs</span><span id="fs0">${kw('public class')} ${cl('CalendarService')}</span>
+<span id="fs1">  : ${cl('ICalendarService')}</span>
 <span id="fs2">{</span>
-<span id="fs3">  ${at('[FanOut')}(maxWorkers: ${nm('4')}${at(']')}</span>
-<span id="fs4">  ${kw('public async')} ${cl('Task')}&lt;${cl('HolidayData')}[]&gt;</span>
-<span id="fs5">    ${mt('GetHolidaysAsync')}(${kw('string')}[] years)</span>
+<span id="fs3">  ${at('[FanOut')}(splitOn: ${st('"years"')}, maxWorkers: ${nm('5')}${at(']')}</span>
+<span id="fs4">  ${kw('public async')} ${cl('Task')}&lt;${cl('Dictionary')}&lt;${kw('int')}, ${kw('string')}&gt;&gt;</span>
+<span id="fs5">    ${mt('GetHolidaysForYearsAsync')}(${kw('int')}[] years, ${kw('string')} country)</span>
 <span id="fs6">  {</span>
-<span id="fs7">    ${cm('// proxy calls once per item')}</span>
-<span id="fs8">    ${kw('return await')} _http</span>
-<span id="fs9">      .${mt('GetAsync')}&lt;${cl('HolidayData')}&gt;(</span>
-<span id="fsa">        $${st('"/holidays/{year}"')});</span>
-<span id="fsb">  }</span>
-<span id="fsc">}</span>
+<span id="fs7">    ${kw('var')} year = years[${nm('0')}]; ${cm('// proxy sends one year per worker')}</span>
+<span id="fs8">    ${kw('var')} r = ${kw('await')} _http.${mt('GetAsync')}(</span>
+<span id="fs9">      $${st('"/v1/calendar/holidays/{country}/{year}"')});</span>
+<span id="fsa">    ${kw('return new')} ${cl('Dictionary')}&lt;${kw('int')}, ${kw('string')}&gt;</span>
+<span id="fsb">      { [year] = ${kw('await')} r.Content.${mt('ReadAsStringAsync')}() };</span>
+<span id="fsc">  }</span>
+<span id="fsd">}</span>
 `;
 
 const FO = {
@@ -975,8 +979,8 @@ const FO = {
     { id:'w2',      x:390, y:140, label:'Worker 2',      sub:'2023' },
     { id:'w3',      x:390, y:205, label:'Worker 3',      sub:'2024' },
     { id:'w4',      x:390, y:270, label:'Worker 4',      sub:'2025' },
-    { id:'http',    x:570, y:190, label:'HTTP Service',  sub:'× 4 concurrent' },
-    { id:'merge',   x:700, y:190, label:'Merge',         sub:'Task.WhenAll' },
+    { id:'http',    x:570, y:190, label:'Calendar API',  sub:'localhost:8080' },
+    { id:'merge',   x:700, y:190, label:'Merge',         sub:'Dictionary merge' },
   ],
   edges: [
     { id:'e1',  from:'caller', to:'proxy' },
@@ -997,49 +1001,49 @@ const FO = {
       nodes:   { caller:'default', proxy:'default', w1:'default', w2:'default', w3:'default', w4:'default', http:'default', merge:'default' },
       packets: [],
       code:    ['fs3','fs4','fs5'],
-      desc:    '<strong>[FanOut]</strong> tells the proxy to treat the method\'s array argument as a work list — one item per worker.'
+      desc:    '<strong>[FanOut(splitOn: "years")]</strong> tells the proxy to split the <code>int[] years</code> array — one item per worker. <code>maxWorkers: 5</code> caps concurrency.'
     },
     {
       nodes:   { caller:'active', proxy:'default', w1:'default', w2:'default', w3:'default', w4:'default', http:'default', merge:'default' },
       packets: [ {edge:'e1',color:'#58a6ff',delay:0} ],
       code:    ['fs4','fs5'],
-      desc:    'Your code calls <strong>GetHolidaysAsync(["2022","2023","2024","2025"])</strong> — a single awaited call.'
+      desc:    'Your code calls <strong>GetHolidaysForYearsAsync([2020,2021,2022,2023], "DK")</strong> — a single awaited call with an array of years.'
     },
     {
       nodes:   { caller:'default', proxy:'active', w1:'default', w2:'default', w3:'default', w4:'default', http:'default', merge:'default' },
       packets: [],
       code:    ['fs3'],
-      desc:    'The proxy detects <strong>[FanOut]</strong>, reads the array parameter, and spins up 4 worker tasks (up to maxWorkers).'
+      desc:    'The proxy detects <strong>[FanOut]</strong>, reads the <code>years</code> array via <code>splitOn</code>, and spins up worker tasks (up to maxWorkers: 5).'
     },
     {
       nodes:   { caller:'default', proxy:'active', w1:'active', w2:'active', w3:'active', w4:'active', http:'default', merge:'default' },
       packets: [ {edge:'e2a',color:'#58a6ff',delay:0},{edge:'e2b',color:'#79c0ff',delay:80},{edge:'e2c',color:'#d2a8ff',delay:160},{edge:'e2d',color:'#ffa657',delay:240} ],
       code:    ['fs3'],
-      desc:    '4 workers start concurrently — each receives one year. They do NOT wait for each other.'
+      desc:    '4 workers start concurrently — each receives <code>years[0]</code> set to one year. Each returns a single-entry <code>Dictionary&lt;int, string&gt;</code>.'
     },
     {
       nodes:   { caller:'default', proxy:'default', w1:'active', w2:'active', w3:'active', w4:'active', http:'active', merge:'default' },
       packets: [ {edge:'e3a',color:'#58a6ff',delay:0},{edge:'e3b',color:'#79c0ff',delay:80},{edge:'e3c',color:'#d2a8ff',delay:160},{edge:'e3d',color:'#ffa657',delay:240} ],
       code:    ['fs7','fs8','fs9','fsa'],
-      desc:    'Each worker independently calls the HTTP service for its year — <em>all 4 calls are in-flight simultaneously</em>.'
+      desc:    'Each worker independently calls <strong>/v1/calendar/holidays/DK/{year}</strong> — all calls are in-flight simultaneously.'
     },
     {
       nodes:   { caller:'default', proxy:'default', w1:'success', w2:'success', w3:'success', w4:'success', http:'success', merge:'active' },
       packets: [ {edge:'e4a',color:'#3fb950',delay:0},{edge:'e4a',color:'#3fb950',delay:100},{edge:'e4a',color:'#3fb950',delay:200},{edge:'e4a',color:'#3fb950',delay:300} ],
       code:    ['fs8','fs9','fsa'],
-      desc:    '✅ All 4 results arrive. <strong>Task.WhenAll</strong> collects them in the merge step.'
+      desc:    '✅ All results arrive. The proxy merges the partial <code>Dictionary&lt;int, string&gt;</code> results into one combined dictionary.'
     },
     {
       nodes:   { caller:'default', proxy:'active', w1:'success', w2:'success', w3:'success', w4:'success', http:'success', merge:'success' },
       packets: [ {edge:'e5',color:'#3fb950',delay:0} ],
       code:    ['fs4','fs5'],
-      desc:    'The proxy merges the results into a single array — preserving input order.'
+      desc:    'The proxy merges all partial dictionaries — keyed by year, values are raw JSON holiday responses.'
     },
     {
       nodes:   { caller:'success', proxy:'success', w1:'dim', w2:'dim', w3:'dim', w4:'dim', http:'default', merge:'dim' },
       packets: [ {edge:'e6',color:'#3fb950',delay:0} ],
       code:    ['fs4','fs5'],
-      desc:    '✅ Your <strong>await</strong> resolves with <em>HolidayData[4]</em>. 4× parallel calls, zero boilerplate.'
+      desc:    '✅ Your <strong>await</strong> resolves with <em>Dictionary&lt;int, string&gt;</em> — 4 years of DK holidays, fetched in parallel. Zero boilerplate.'
     },
   ]
 };
