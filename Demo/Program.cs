@@ -20,7 +20,7 @@ services.AddResilience(options =>
 });
 services.AddResilientService<ICalendarService, CalendarService>();
 
-using var provider = services.BuildServiceProvider();
+await using var provider = services.BuildServiceProvider();
 var calendar = provider.GetRequiredService<ICalendarService>();
 
 // =============================================================================
@@ -41,7 +41,7 @@ Console.WriteLine();
 Hint("Stop the Calendar service now  (docker compose stop <service>)");
 Step("Press ENTER when the service is stopped...");
 
-int retryRound = 1;
+var retryRound = 1;
 string? retryResult = null;
 while (retryResult is null)
 {
@@ -83,7 +83,7 @@ Info("── Phase 1: exhaust 3 call sequences to open the circuit ────�
 Hint("Service should be DOWN — watch retries fail and the circuit trip");
 Console.WriteLine();
 
-for (int i = 1; i <= 3; i++)
+for (var i = 1; i <= 3; i++)
 {
     Info($"Call {i}/3  (retries 2x before the breaker counts this as a failure):");
     Console.WriteLine();
@@ -163,7 +163,7 @@ Console.WriteLine();
 Hint("Stop the Calendar service now  (docker compose stop <service>)");
 Step("Press ENTER when the service is stopped...");
 
-int superRound = 1;
+var superRound = 1;
 string? superResult = null;
 while (superResult is null)
 {
@@ -259,7 +259,6 @@ static void Info(string text)
     Console.ResetColor();
 }
 
-/// <summary>Dimmed instruction telling the user what to do with Docker right now.</summary>
 static void Hint(string text)
 {
     Console.ForegroundColor = ConsoleColor.DarkGray;
@@ -295,8 +294,6 @@ static void Dim(string text)
     Console.ResetColor();
 }
 
-
-/// <summary>Blocking pause — waits for the user to press ENTER before continuing.</summary>
 static void Step(string text)
 {
     Console.ForegroundColor = ConsoleColor.DarkYellow;
