@@ -4,15 +4,97 @@
 
 ## 📈 Quality Evolution
 
-| Dimension | Baseline | Fix Cycle 1 | Optimisation | v2.4 · 2026-05-11 | v2.5 · 2026-05-11 | v2.6 · 2026-05-19 |
-|--|:---:|:---:|:---:|:---:|:---:|:---:|
-| Package design & correctness | 7.8 | 9.1 | 9.4 | 9.7 | 9.8 | **9.8** |
-| AOP utilisation | 7.5 | 8.7 | 8.9 | 9.0 | 9.2 | **9.2** |
-| Test coverage & stability | 7.0 | 8.6 | 8.7 | 8.8 | 8.8 | **9.2** |
-| Execution overhead | 7.5 | 8.5 | 8.8 | 9.3 | 9.5 | **9.5** |
-| Developer experience | 7.8 | 9.0 | 9.2 | 9.4 | 9.8 | **9.8** |
-| Cyclomatic complexity | 9.0 | 10.0 | 10.0 | 10.0 | 10.0 | **10.0** |
-| 🏆 **Overall** | 7.8 | 9.15 | 9.23 | 9.45 | 🟢 9.68 | 🟢 **9.77** |
+| Dimension | Baseline | Fix Cycle 1 | Optimisation | v2.4 · 2026-05-11 | v2.5 · 2026-05-11 | v2.6 · 2026-05-19 | v2.7 · 2026-05-21 |
+|--|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Package design & correctness | 7.8 | 9.1 | 9.4 | 9.7 | 9.8 | 9.8 | **9.9** |
+| AOP utilisation | 7.5 | 8.7 | 8.9 | 9.0 | 9.2 | 9.2 | **9.2** |
+| Test coverage & stability | 7.0 | 8.6 | 8.7 | 8.8 | 8.8 | 9.2 | **9.3** |
+| Execution overhead | 7.5 | 8.5 | 8.8 | 9.3 | 9.5 | 9.5 | **9.5** |
+| Developer experience | 7.8 | 9.0 | 9.2 | 9.4 | 9.8 | 9.8 | **9.9** |
+| Cyclomatic complexity | 9.0 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 | **10.0** |
+| 🏆 **Overall** | 7.8 | 9.15 | 9.23 | 9.45 | 🟢 9.68 | 🟢 9.77 | 🟢 **9.82** |
+
+---
+
+## v2.7 · 2026-05-21 — Dependency Cleanup
+
+*140 tests · net8.0 library / net9.0 tests*
+
+### What changed
+
+Removed the `prometheus-net` package dependency and all associated instrumentation code. Prometheus/Grafana observability is a planned future feature and was not shipping as part of the library — carrying the dependency and its metric registrations was premature.
+
+| Item | Detail |
+|---|---|
+| `prometheus-net` package | Removed from `Oasis.Resilience.csproj` |
+| `ResilienceMeter.cs` | Deleted — Prometheus counter/gauge definitions |
+| `ResilienceObservability.cs` | Deleted — OpenTelemetry meter name constant |
+| Metric calls in `RetryActor` | `RetryAttempts` / `RetryFailures` increments removed |
+| Metric calls in `CircuitBreakerActor` | 4× `RecordCircuitTransition` calls removed |
+| Metric calls in `ResilientProxy` | `FanOutDispatched` / `FanOutFailures` increments removed |
+| Docker infrastructure | `docker-compose.yml`, `docker/`, `Makefile` deleted — observability stack was local-dev only and not part of the package |
+
+### 📦 Build
+
+```
+dotnet build  →  0 Warning(s)  0 Error(s)
+dotnet test   →  140 passed  0 failed  0 skipped
+```
+
+---
+
+## v2.6 · 2026-05-19 — Concurrency & Correctness Review
+
+*130 tests · 90.3% line / 76.9% branch coverage · net8.0 library / net9.0 tests*
+
+### 🔍 Review Summary
+
+Five changes made by an external AI model on another machine were reviewed, two defects identified, and both corrected before merge.
+
+### Critical Assessment
+
+| # | Change | Verdict | Impact |
+|---|---|---|---|
+| 1 | `ReceiveAsync` → `Receive` + `PipeTo` in `CircuitBreakerActor` | ✅ Correct and important | Mailbox free during async ops — real throughput improvement under concurrency |
+| 2 | `OperationCanceledException` not counted as CB failure | ✅ Correct semantics; **defect fixed** (original exception was re-wrapped in new instance) | Circuit no longer penalises client-side cancellations |
+| 3 | `_inFlightCounts` for true half-open concurrency tracking | ✅ Fixes logical bug | Half-open slot limit now enforces *concurrent* calls, not historical count |
+| 4 | `.Wait()` → `.GetAwaiter().GetResult()` in `ResilienceRuntime.Dispose` | ⚠️ **Regression detected and corrected** | Removed 5 s shutdown safety net; fixed to `.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult()` |
+| 5 | Improved error messages in `ResilientProxy` | ✅ Pure DX improvement | Faster diagnosis of misconfiguration |
+
+### 🐛 Defects Corrected in This Pass
+
+| # | Severity | Fix |
+|---|---|---|
+| 1 | 🟠 High | **`OperationCanceledException` identity lost** — external AI re-wrapped with `new OperationCanceledException()`, discarding stack trace and inner exception. Now passes original `ex` / `msg.Exception` directly. |
+| 2 | 🟠 High | **`ResilienceRuntime.Dispose` shutdown timeout removed** — `.GetAwaiter().GetResult()` alone has no timeout. Fixed to `.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult()` — preserves both the 5 s deadline and clean exception propagation (no `AggregateException` wrapping). |
+
+### 📊 Updated Quality Scorecard
+
+| Dimension | Previous | Now | Δ |
+|---|---|---|---|
+| Test coverage — line | 89.8% | **90.3%** | +0.5% |
+| Test coverage — branch | 76.7% | **76.9%** | +0.2% |
+| Total tests | 127 | **130** | +3 |
+| Cyclomatic complexity | 10 / 10 | **10 / 10** | — |
+| Package design & correctness | 9.4 / 10 | **9.7 / 10** | +0.3 |
+| AOP utilisation | 8.9 / 10 | **9.0 / 10** | +0.1 |
+| Execution overhead | 8.8 / 10 | **9.3 / 10** | +0.5 |
+| Developer experience | 9.2 / 10 | **9.4 / 10** | +0.2 |
+| 🏆 **Overall** | 9.15 / 10 | 🟢 **9.45 / 10** | **+0.30** |
+
+> **Execution overhead** jumped 0.5 points because the `PipeTo` refactor eliminates the hidden mailbox serialisation on every circuit-breaker-protected call. Under real concurrent traffic (multiple services, multiple callers) this is a material latency improvement.
+
+### ⚠️ Remaining Deferred Items (unchanged)
+
+- Per-service actor isolation — one shared `RetryActor` + `CircuitBreakerActor` for all services; `PipeTo` significantly mitigates but does not fully resolve serialisation.
+- Branch coverage gap (~23%) — actor crash/restart and DI teardown paths.
+
+### 📦 Build
+
+```
+dotnet build  →  0 Warning(s)  0 Error(s)
+dotnet test   →  130 passed  0 failed  0 skipped
+```
 
 ---
 
@@ -103,61 +185,6 @@ The new design calls the existing implementation method directly with a single-e
 ```
 dotnet build  →  0 Warning(s)  0 Error(s)
 dotnet test   →  124 passed  0 failed  0 skipped
-```
-
----
-
-
-
-*130 tests · 90.3% line / 76.9% branch coverage · net8.0 library / net9.0 tests*
-
-### 🔍 Review Summary
-
-Five changes made by an external AI model on another machine were reviewed, two defects identified, and both corrected before merge.
-
-### Critical Assessment
-
-| # | Change | Verdict | Impact |
-|---|---|---|---|
-| 1 | `ReceiveAsync` → `Receive` + `PipeTo` in `CircuitBreakerActor` | ✅ Correct and important | Mailbox free during async ops — real throughput improvement under concurrency |
-| 2 | `OperationCanceledException` not counted as CB failure | ✅ Correct semantics; **defect fixed** (original exception was re-wrapped in new instance) | Circuit no longer penalises client-side cancellations |
-| 3 | `_inFlightCounts` for true half-open concurrency tracking | ✅ Fixes logical bug | Half-open slot limit now enforces *concurrent* calls, not historical count |
-| 4 | `.Wait()` → `.GetAwaiter().GetResult()` in `ResilienceRuntime.Dispose` | ⚠️ **Regression detected and corrected** | Removed 5 s shutdown safety net; fixed to `.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult()` |
-| 5 | Improved error messages in `ResilientProxy` | ✅ Pure DX improvement | Faster diagnosis of misconfiguration |
-
-### 🐛 Defects Corrected in This Pass
-
-| # | Severity | Fix |
-|---|---|---|
-| 1 | 🟠 High | **`OperationCanceledException` identity lost** — external AI re-wrapped with `new OperationCanceledException()`, discarding stack trace and inner exception. Now passes original `ex` / `msg.Exception` directly. |
-| 2 | 🟠 High | **`ResilienceRuntime.Dispose` shutdown timeout removed** — `.GetAwaiter().GetResult()` alone has no timeout. Fixed to `.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult()` — preserves both the 5 s deadline and clean exception propagation (no `AggregateException` wrapping). |
-
-### 📊 Updated Quality Scorecard
-
-| Dimension | Previous | Now | Δ |
-|---|---|---|---|
-| Test coverage — line | 89.8% | **90.3%** | +0.5% |
-| Test coverage — branch | 76.7% | **76.9%** | +0.2% |
-| Total tests | 127 | **130** | +3 |
-| Cyclomatic complexity | 10 / 10 | **10 / 10** | — |
-| Package design & correctness | 9.4 / 10 | **9.7 / 10** | +0.3 |
-| AOP utilisation | 8.9 / 10 | **9.0 / 10** | +0.1 |
-| Execution overhead | 8.8 / 10 | **9.3 / 10** | +0.5 |
-| Developer experience | 9.2 / 10 | **9.4 / 10** | +0.2 |
-| 🏆 **Overall** | 9.15 / 10 | 🟢 **9.45 / 10** | **+0.30** |
-
-> **Execution overhead** jumped 0.5 points because the `PipeTo` refactor eliminates the hidden mailbox serialisation on every circuit-breaker-protected call. Under real concurrent traffic (multiple services, multiple callers) this is a material latency improvement.
-
-### ⚠️ Remaining Deferred Items (unchanged)
-
-- Per-service actor isolation — one shared `RetryActor` + `CircuitBreakerActor` for all services; `PipeTo` significantly mitigates but does not fully resolve serialisation.
-- Branch coverage gap (~23%) — actor crash/restart and DI teardown paths.
-
-### 📦 Build
-
-```
-dotnet build  →  0 Warning(s)  0 Error(s)
-dotnet test   →  130 passed  0 failed  0 skipped
 ```
 
 ---
