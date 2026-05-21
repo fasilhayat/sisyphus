@@ -15,13 +15,6 @@ dotnet test --filter "FullyQualifiedName~RetryActorTests"
 dotnet test --filter "DisplayName~should retry"
 ```
 
-Docker (for local infrastructure):
-```bash
-make up      # docker compose up -d
-make down    # docker compose down
-make clean   # tear down with volumes, prune images
-```
-
 ## Architecture
 
 `Oasis.Resilience` is an Akka.NET-backed resilience library that uses `System.Reflection.DispatchProxy` to intercept method calls and apply resilience policies **declared as attributes** on interface methods — keeping all resilience logic out of business code.
@@ -47,7 +40,7 @@ Consumer calls interface method
 |---|---|---|
 | `Oasis.Resilience` | net8.0 | Library / NuGet package |
 | `Oasis.Resilience.Test.Unit` | net9.0 | xUnit unit & integration tests |
-| `Demo` | — | Usage examples (not shipped) |
+| `Demo`, `DemoWithNuGet` | — | Usage examples (not shipped) |
 | `ResilienceWithAop`, `ResilienceWithAkka` | — | Prototype/demo apps |
 
 ### Key Types
@@ -55,6 +48,10 @@ Consumer calls interface method
 - **`ResilienceRuntime`** (internal singleton) — owns the `ActorSystem` and creates the two shared actor refs (`RetryActor`, `CircuitBreakerActor`). Disposed by DI.
 - **`ResilientProxy<T>`** — the `DispatchProxy` subclass; caches attribute lookups and supervisor actors in `ConcurrentDictionary` fields. Static caches are per `T`, instance caches are per method.
 - **`ResilienceRegistration`** — DI entry points: `AddResilience(…)` configures options; `AddResilientService<TInterface, TImpl>()` wires the proxy.
+- **`OperationRunner`** / **`SupervisedWrapper`** — internal actors used by `SupervisionActor` to run work inside a supervised hierarchy.
+
+### Actor message convention
+All actor message types are `sealed record` types defined as nested types inside the actor class. Follow the same pattern when adding new messages.
 
 ## Key Conventions
 
@@ -81,6 +78,15 @@ public Task<string> GetDataAsync();
 ### FanOut — no factories needed (v2.5+)
 The `[FanOut]` attribute auto-detects the single array parameter to split. The **method body itself** is called once per item (with a single-element array). No `RegisterMessageFactory` / `RegisterResultAggregator` calls are required.
 
+When the method has **more than one array parameter**, specify which to split with `splitOn`:
+
+```csharp
+[FanOut(splitOn: "items", maxWorkers: 5)]
+public Task<List<Result>> ProcessAsync(int[] items, string[] categories) { ... }
+```
+
+Auto-merge is supported for `Dictionary<K,V>` (entries merged), `T[]` (concatenated), and `List<T>` (concatenated).
+
 ### `InternalsVisibleTo`
 `Oasis.Resilience` exposes internals to `Oasis.Resilience.Test.Unit` via an assembly-level attribute in the csproj. Keep test project names in sync if renaming.
 
@@ -94,3 +100,6 @@ Test stack: **xUnit + FluentAssertions + NSubstitute + Akka.TestKit.Xunit2**.
 
 ### NuGet sources
 `nuget.config` includes a local feed at `http://nuget.hayatnet.local/v3/index.json` (insecure). This must be reachable when restoring on a developer machine; CI uses the public `nuget.org` feed as fallback.
+
+### CI
+GitHub Actions (`.github/workflows/nuget.yml`) runs restore → build → test → Codecov upload on every push/PR to `main`.

@@ -131,7 +131,6 @@ public sealed class CircuitBreakerActor : ReceiveActor
         if (breaker.State == CircuitState.Open && currentState == CircuitState.HalfOpen)
         {
             Log($"Circuit breaker for '{msg.OperationKey}' is now HalfOpen (reset timeout elapsed)");
-            ResilienceMeter.RecordCircuitTransition(msg.OperationKey, 1, "HalfOpen");
         }
 
         if (currentState == CircuitState.Open)
@@ -237,7 +236,6 @@ public sealed class CircuitBreakerActor : ReceiveActor
 
         _breakers.TryUpdate(msg.OperationKey, updated, existing);
         Log($"Circuit breaker for '{msg.OperationKey}' is now Closed");
-        ResilienceMeter.RecordCircuitTransition(msg.OperationKey, 0, "Closed");
     }
 
     /// <summary>Records a failed operation. In <see cref="CircuitState.HalfOpen"/> the circuit re-opens
@@ -258,7 +256,6 @@ public sealed class CircuitBreakerActor : ReceiveActor
         if (state.State == CircuitState.HalfOpen)
         {
             Log($"Circuit breaker for '{operationKey}' re-opened from HalfOpen on failed trial call");
-            ResilienceMeter.RecordCircuitTransition(operationKey, 2, "Open");
             return state with
             {
                 State = CircuitState.Open,
@@ -272,7 +269,6 @@ public sealed class CircuitBreakerActor : ReceiveActor
         if (newFailureCount >= state.FailureThreshold)
         {
             Log($"Circuit breaker for '{operationKey}' opened after {newFailureCount} failures");
-            ResilienceMeter.RecordCircuitTransition(operationKey, 2, "Open");
             return state with
             {
                 State = CircuitState.Open,

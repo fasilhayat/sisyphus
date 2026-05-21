@@ -302,8 +302,6 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
         var splitIndex = FindSplitParameterIndex(parameters, fanOut.SplitOn);
         var splitArray = (Array)args[splitIndex];
 
-        ResilienceMeter.FanOutDispatched.WithLabels(operationKey).Inc(splitArray.Length);
-
         var gate = new SemaphoreSlim(Math.Max(1, maxWorkers), Math.Max(1, maxWorkers));
         var tasks = new List<Task<TResult>>(splitArray.Length);
 
@@ -318,15 +316,7 @@ public class ResilientProxy<T> : DispatchProxy, IAsyncDisposable, IDisposable
 
     private async Task<TResult> InvokeForSingleItemTracked<TResult>(MethodInfo method, object[] args, int splitIndex, object item, SemaphoreSlim gate, string operationKey)
     {
-        try
-        {
-            return await InvokeForSingleItem<TResult>(method, args, splitIndex, item, gate).ConfigureAwait(false);
-        }
-        catch
-        {
-            ResilienceMeter.FanOutFailures.WithLabels(operationKey).Inc();
-            throw;
-        }
+        return await InvokeForSingleItem<TResult>(method, args, splitIndex, item, gate).ConfigureAwait(false);
     }
 
     /// <summary>

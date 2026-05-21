@@ -102,14 +102,12 @@ public sealed class RetryActor : ReceiveActor, IWithTimers
         try
         {
             LogDebug("Attempt {0} executing...", attempt);
-            ResilienceMeter.RetryAttempts.WithLabels(operationKey).Inc();
             var result = await operation();
             LogDebug("Success on attempt {0}", attempt);
             originalSender.Tell(result);
         }
         catch (Exception ex)
         {
-            ResilienceMeter.RetryFailures.WithLabels(operationKey).Inc();
             HandleAttemptFailure(operation, maxAttempts, initialDelay, attempt, originalSender, retryOn, ex, operationKey);
         }
     }
